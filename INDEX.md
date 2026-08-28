@@ -12,6 +12,31 @@ This repository contains documentation, guides, and context to assist developers
 - **[README.md](README.md)** - Repository overview and purpose
 - **[AGENTS.md](AGENTS.md)** - Agent-specific instructions and guidance
 
+### Reproducer Development Guides
+
+Located in `reproducer-development/`:
+
+#### Deployment Reproducers
+- **[wildfly-deployment-reproducer-guide.md](reproducer-development/wildfly-deployment-reproducer-guide.md)**
+  - **Purpose**: How to create a deployment-based reproducer project for diagnosing WildFly issues
+  - **Use When**: Building a minimal project to reproduce a bug or verify behaviour in WildFly
+  - **Key Topics**: Archetype bootstrapping, multi-module structure, Galleon layers, CLI scripts, server lifecycle, verification with curl
+  - **Related To**: WildFly Galleon Guide (https://docs.wildfly.org/41/Galleon_Guide.html)
+
+#### Development Workflows
+- **[wildfly-development-workflow.md](reproducer-development/wildfly-development-workflow.md)**
+  - **Purpose**: Development workflows for working with WildFly and its components in a reproducer
+  - **Use When**: Debugging WildFly boot process, testing SNAPSHOT builds, overriding component versions
+  - **Key Topics**: Remote debugging (JDWP, suspend=y), WildFly SNAPSHOT builds, Galleon channels/manifests for version overrides
+  - **Related To**: wildfly-deployment-reproducer-guide.md (complementary workflow guide)
+
+#### Jakarta EE Security
+- **[jakarta-ee-security-patterns.md](reproducer-development/jakarta-ee-security-patterns.md)**
+  - **Purpose**: Patterns specific to Jakarta EE Security (Soteria) reproducers in WildFly
+  - **Use When**: Creating reproducers for Jakarta EE Security issues, debugging Soteria authentication mechanisms
+  - **Key Topics**: Authentication mechanism definitions, integrated-jaspi configuration, IdentityStore setup, multi-WAR EAR bugs, Soteria version override
+  - **Related To**: wildfly-deployment-reproducer-guide.md, wildfly-development-workflow.md
+
 ### Feature Development Guides
 
 Located in `feature-development/`:
@@ -42,6 +67,13 @@ Located in `feature-development/`:
 
 | Task | Primary Guide | Supporting Guides |
 |------|--------------|-------------------|
+| Create a deployment reproducer | wildfly-deployment-reproducer-guide.md | wildfly-development-workflow.md |
+| Create Jakarta EE Security reproducer | jakarta-ee-security-patterns.md | wildfly-deployment-reproducer-guide.md |
+| Debug WildFly boot process | wildfly-development-workflow.md | wildfly-deployment-reproducer-guide.md |
+| Debug Jakarta EE Security | jakarta-ee-security-patterns.md | wildfly-development-workflow.md |
+| Test WildFly SNAPSHOT builds | wildfly-development-workflow.md | wildfly-deployment-reproducer-guide.md |
+| Override component versions | wildfly-development-workflow.md | wildfly-deployment-reproducer-guide.md |
+| Override Soteria version | jakarta-ee-security-patterns.md | wildfly-development-workflow.md |
 | Bump management model version | management-model-version-bump-guide.md | schema-version-bump-guide.md |
 | Bump schema version | schema-version-bump-guide.md | management-model-version-bump-guide.md |
 | Create/update test files | subsystem-schema-test-requirements.md | schema-version-bump-guide.md |
@@ -50,6 +82,26 @@ Located in `feature-development/`:
 
 ### By Keyword
 
+- **Reproducer**: wildfly-deployment-reproducer-guide.md
+- **Galleon layers**: wildfly-deployment-reproducer-guide.md
+- **Galleon channels**: wildfly-development-workflow.md
+- **Archetype**: wildfly-deployment-reproducer-guide.md
+- **Server lifecycle**: wildfly-deployment-reproducer-guide.md
+- **EAR/WAR deployment**: wildfly-deployment-reproducer-guide.md
+- **Jakarta EE Security**: jakarta-ee-security-patterns.md
+- **Soteria**: jakarta-ee-security-patterns.md
+- **JASPIC**: jakarta-ee-security-patterns.md
+- **integrated-jaspi**: jakarta-ee-security-patterns.md
+- **IdentityStore**: jakarta-ee-security-patterns.md
+- **HttpAuthenticationMechanism**: jakarta-ee-security-patterns.md
+- **BASIC authentication**: jakarta-ee-security-patterns.md
+- **FORM authentication**: jakarta-ee-security-patterns.md
+- **Remote debugging**: wildfly-development-workflow.md, jakarta-ee-security-patterns.md
+- **JDWP**: wildfly-development-workflow.md
+- **SNAPSHOT builds**: wildfly-development-workflow.md
+- **Version override**: wildfly-development-workflow.md
+- **Manifest**: wildfly-development-workflow.md
+- **Component override**: wildfly-development-workflow.md
 - **Version bump**: management-model-version-bump-guide.md, schema-version-bump-guide.md
 - **Transformer**: management-model-version-bump-guide.md
 - **Schema/XSD**: schema-version-bump-guide.md
@@ -105,5 +157,5 @@ This index should be updated when:
 
 ---
 
-**Last Updated**: 2026-08-21
-**Index Version**: 1.0
+**Last Updated**: 2026-08-28
+**Index Version**: 1.2
