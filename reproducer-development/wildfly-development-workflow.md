@@ -64,6 +64,7 @@ LOG_FILE="$SERVER_HOME/standalone/log/server.log"
 DEBUG_MODE="no"
 SUSPEND_MODE="n"
 
+# Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -77,6 +78,10 @@ while [[ $# -gt 0 ]]; do
         *)
             echo "Unknown option: $1"
             echo "Usage: $0 [--debug] [--suspend]"
+            echo ""
+            echo "Options:"
+            echo "  --debug     Enable remote debugging on port 5005"
+            echo "  --suspend   Pause server at boot until debugger attaches (requires --debug)"
             exit 1
             ;;
     esac
@@ -94,6 +99,7 @@ fi
 
 rm -f "$LOG_FILE"
 
+# Configure debug mode
 if [ "$DEBUG_MODE" = "yes" ]; then
     export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=$SUSPEND_MODE,address=*:5005"
     echo "Starting server in debug mode (suspend=$SUSPEND_MODE, port=5005)..."
@@ -111,6 +117,9 @@ if [ "$SUSPEND_MODE" = "n" ]; then
     for i in $(seq 1 60); do
         if grep -q "WFLYSRV0025" "$LOG_FILE" 2>/dev/null; then
             echo "Server started."
+            if [ "$DEBUG_MODE" = "yes" ]; then
+                echo "Debugger can attach on localhost:5005"
+            fi
             exit 0
         fi
         if ! kill -0 $SERVER_PID 2>/dev/null; then
@@ -122,7 +131,7 @@ if [ "$SUSPEND_MODE" = "n" ]; then
     echo "Timed out after 60s. Check $LOG_FILE"
     exit 1
 else
-    echo "Server paused. Attach debugger to continue boot."
+    echo "Server paused. Attach debugger on localhost:5005 to continue boot."
 fi
 ```
 

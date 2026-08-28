@@ -337,8 +337,47 @@ Every reproducer must include a `README.md` with:
 6. Expected vs actual results (table format)
 7. How to check server logs for evidence
 8. Stop command: `./stop-server.sh`
+9. **Development Workflows section** documenting:
+   - Remote debugging (normal and suspend modes)
+   - Component version override (if configured)
+   - WildFly SNAPSHOT workflow (if applicable)
 
 For simple reproducers with one or two test scenarios, curl examples can be run directly. For reproducers with multiple test scenarios (e.g., testing different authentication mechanisms), see **Step 5.5: Test Client Script** for detailed implementation guidance.
+
+#### README Remote Debugging Section
+
+Include a "Remote Debugging" section in the README that documents the `--debug` and `--suspend` flags:
+
+```markdown
+### Remote Debugging
+
+The `start-server.sh` script supports remote debugging with optional flags:
+
+**Normal debug mode** (server starts immediately, debugger can attach anytime):
+```bash
+./start-server.sh --debug
+```
+
+**Suspend mode** (server pauses at boot until debugger attaches):
+```bash
+./start-server.sh --debug --suspend
+```
+
+Both modes listen on port `5005`. Attach your IDE debugger to `localhost:5005`.
+
+**When to use `--suspend`**: [Describe which subsystems or initialization logic need boot-time debugging for this reproducer]. Use `--suspend` to catch:
+- [List relevant initialization points - e.g., CDI portable extensions, ServletContainerInitializers, subsystem boot]
+
+**Debugging [topic] initialization**: Set breakpoints in:
+- `[package.ClassName]` — [what this class does in the initialization flow]
+- `[package.ClassName]` — [what this class does in the initialization flow]
+```
+
+**Guidance for customization**:
+- Replace `[Describe which subsystems...]` with the specific subsystems relevant to your reproducer (e.g., "Security subsystems (Elytron, Jakarta EE Security)" or "Messaging subsystems" or "Persistence initialization")
+- Replace the bullet list with initialization points relevant to what you're debugging
+- Replace the debugging targets section with actual class names and packages from the components being debugged
+- If boot-time debugging isn't relevant to your reproducer, you can omit the "When to use `--suspend`" paragraph and just document the two modes
 
 ## Verification
 
@@ -395,13 +434,15 @@ This shows all available versions with release dates, preventing build failures 
 - [ ] Galleon layers selected from WildFly Galleon Guide documentation
 - [ ] `core-tools` layer included
 - [ ] CLI scripts created for any server configuration
-- [ ] `start-server.sh` and `stop-server.sh` scripts created
+- [ ] `start-server.sh` and `stop-server.sh` scripts created with `--debug` and `--suspend` support
 - [ ] `test-client.sh` created (if multiple test scenarios)
 - [ ] `README.md` written with build/run/verify instructions
+- [ ] `README.md` includes "Remote Debugging" section documenting `--debug` and `--suspend` flags
+- [ ] `README.md` includes "Development Workflows" section (component override, SNAPSHOT builds)
 - [ ] Bug or behaviour verified with curl commands (or test-client.sh) and server log inspection
 - [ ] `mvn clean package -DskipTests` builds from clean state
 
 ---
 
-**Last Updated**: 2026-08-21
-**Version**: 1.0
+**Last Updated**: 2026-08-28
+**Version**: 1.1
