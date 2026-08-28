@@ -22,7 +22,7 @@ Before writing code, establish a plan:
 
 - **groupId**: `org.wildfly.security.experimental` (generic enough to reuse across reproducers)
 - **version**: `1.0.0.Alpha1-SNAPSHOT`
-- **artifactId**: Pick a meaningful, descriptive name (e.g. `ee-security-multi-war-ear-experiment`)
+- **artifactId**: Pick a meaningful, descriptive name that reflects the issue being reproduced (e.g. `security-integration-reproducer`, `multi-module-auth-test`)
 - Each reproducer gets its own `README.md` with build instructions and curl-based verification examples
 
 ## Creation Process
