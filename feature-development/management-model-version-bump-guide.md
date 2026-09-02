@@ -4,7 +4,7 @@
 
 This guide serves two purposes:
 
-1. **Implementation Guide**: Describes the process for bumping the management model version for the elytron-oidc-client subsystem in WildFly
+1. **Implementation Guide**: Describes the process for bumping the management model version for WildFly subsystems
 2. **PR Review Checklist**: Ensures that PRs with management model changes have the correct version bump
 
 A management model version bump is a distinct step that must be performed when the subsystem's management model changes, separate from schema changes or model content modifications.
@@ -12,6 +12,8 @@ A management model version bump is a distinct step that must be performed when t
 **Important**: This guide covers ONLY the version bump process. Schema changes and model attribute modifications are separate tasks that should be documented separately.
 
 **Living Document**: This guide should be kept up to date as we work on version bumps and review PRs. If you discover discrepancies, missing steps, or better practices, please update this document to reflect the current reality.
+
+**Note**: While this guide uses elytron-oidc-client as the primary example, the patterns apply to all WildFly subsystems. Different subsystems may use different version management patterns (see "Subsystem Version Patterns" below).
 
 ## Purpose of Management Model Versioning
 
@@ -21,14 +23,104 @@ The management model version tracks the evolution of the subsystem's management 
 2. **Version Tracking**: Each WildFly release can be associated with a specific model version
 3. **Change Documentation**: The version history provides a clear record of when changes were introduced
 
+## Subsystem Version Patterns
+
+WildFly subsystems use one of two patterns for managing model versions. Identify which pattern your subsystem uses before proceeding.
+
+### Pattern A: Enum-based SubsystemModel (Recommended for New Subsystems)
+
+Uses an enum implementing the `SubsystemModel` interface with three-part versioning (major.minor.micro).
+
+**Example subsystems**: elytron-oidc-client, io, remoting, discovery
+
+**File structure**:
+```java
+// Example: ElytronOidcClientSubsystemModel.java
+enum ElytronOidcClientSubsystemModel implements SubsystemModel {
+    VERSION_1_0_0(1, 0, 0),
+    VERSION_2_0_0(2, 0, 0),
+    VERSION_3_0_0(3, 0, 0), // WildFly 32.0-onwards
+    ;
+    static final ElytronOidcClientSubsystemModel CURRENT = VERSION_3_0_0;
+    
+    private final ModelVersion version;
+    
+    ElytronOidcClientSubsystemModel(int major, int minor, int micro) {
+        this.version = ModelVersion.create(major, minor, micro);
+    }
+    
+    @Override
+    public ModelVersion getVersion() {
+        return version;
+    }
+}
+```
+
+**Characteristics**:
+- Dedicated `*SubsystemModel.java` file (e.g., `ElytronOidcClientSubsystemModel.java`)
+- Enum constants with three-part versioning
+- `CURRENT` static field points to latest version
+- Extension class calls `CURRENT.getVersion()` for registration
+
+### Pattern B: Direct ModelVersion Constants (Legacy Pattern)
+
+Uses simple static final constants with single-part versioning (major only).
+
+**Example subsystems**: elytron, core management
+
+**File structure**:
+```java
+// Example: ElytronExtension.java (version constants at top of Extension class)
+public class ElytronExtension implements Extension {
+    static final ModelVersion ELYTRON_18_0_0 = ModelVersion.create(18);
+    static final ModelVersion ELYTRON_19_0_0 = ModelVersion.create(19);
+    static final ModelVersion ELYTRON_20_0_0 = ModelVersion.create(20);
+    
+    private static final ModelVersion ELYTRON_CURRENT = ELYTRON_20_0_0;
+    
+    @Override
+    public void initialize(ExtensionContext context) {
+        final SubsystemRegistration subsystem = context.registerSubsystem(
+            SUBSYSTEM_NAME, 
+            ELYTRON_CURRENT
+        );
+        // ...
+    }
+}
+```
+
+**Characteristics**:
+- Version constants defined directly in the Extension class
+- Single-part version numbering (major only)
+- `CURRENT` private static field (or directly used constant)
+- Simpler but less structured than enum pattern
+
+### Which Pattern to Use?
+
+- **For new subsystems**: Use Pattern A (enum-based) - it's more structured and provides better type safety
+- **For existing subsystems**: Continue with the pattern already in use for consistency
+- **When in doubt**: Check how other files in the subsystem reference versions
+
+The rest of this guide primarily uses **Pattern A** (enum-based) examples. For **Pattern B** subsystems, adapt the steps accordingly:
+- Version constants are added to the Extension class instead of a separate SubsystemModel file
+- Registration uses the `CURRENT` constant directly instead of `CURRENT.getVersion()`
+- Transformer imports come from the Extension class instead of a SubsystemModel class
+
 ## Key Files Involved
 
 The management model version bump touches these core files:
 
-1. **[`ElytronOidcClientSubsystemModel.java`](../wildfly/elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcClientSubsystemModel.java)** - Defines model versions
-2. **[`ElytronOidcExtension.java`](../wildfly/elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcExtension.java)** - Registers the current version
-3. **[`ElytronOidcSubsystemTransformers.java`](../wildfly/elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcSubsystemTransformers.java)** - Handles backward compatibility
-4. **[`VERSIONS.md`](../wildfly/elytron-oidc-client/VERSIONS.md)** - Version history documentation (must be updated)
+**For Pattern A (enum-based) subsystems**:
+1. **`*SubsystemModel.java`** (e.g., `ElytronOidcClientSubsystemModel.java`) - Defines model versions as enum constants
+2. **`*Extension.java`** (e.g., `ElytronOidcExtension.java`) - Registers the current version
+3. **`*SubsystemTransformers.java`** (e.g., `ElytronOidcSubsystemTransformers.java`) - Handles backward compatibility
+
+**For Pattern B (direct constants) subsystems**:
+1. **`*Extension.java`** (e.g., `ElytronExtension.java`) - Defines model version constants AND registers the current version
+2. **`*SubsystemTransformers.java`** (e.g., `ElytronSubsystemTransformers.java`) - Handles backward compatibility
+
+**Optional**:
+4. **`VERSIONS.md`** - Version history documentation (see "Optional: Version History Documentation" section below)
 
 ## Pre-Bump Checklist
 
@@ -386,6 +478,40 @@ After completing the management model version bump:
 4. **Testing**: Update and run tests to verify backward compatibility
 5. **Documentation**: Update release notes and migration guides
 
+## Optional: Version History Documentation
+
+Consider adding a `VERSIONS.md` file at the subsystem root to document version history. This is particularly useful for:
+
+- **Subsystems with frequent model changes**: Helps track what changed and when
+- **Teams with multiple contributors**: Provides shared context for features and their target releases
+- **Complex version histories**: Documents the purpose of each bump and related Jira issues
+
+**When NOT to add VERSIONS.md**:
+- Subsystems with infrequent version bumps may not need additional documentation
+- Version history can alternatively be tracked through git log and commit messages
+- Some teams prefer keeping documentation in Confluence or other systems
+
+**Example structure** (see elytron-oidc-client/VERSIONS.md or elytron/VERSIONS.md):
+
+```markdown
+# [Subsystem Name] Version History
+
+## Model Versions
+
+| Model Version | WildFly Version | Notes |
+|---------------|-----------------|-------|
+| 3.0.0         | 42.0+           | Added feature X (WFLY-12345) |
+| 2.0.0         | 41.0+           | Added feature Y (WFLY-12344) |
+| 1.0.0         | 40.0+           | Initial release |
+
+## Schema Versions
+
+Schema versions are maintained independently from model versions.
+See [Subsystem]SubsystemSchema.java for current schema versions.
+```
+
+If your subsystem would benefit from this documentation, create `<subsystem-root>/VERSIONS.md` following the pattern above.
+
 ## Troubleshooting
 
 ### Issue: Compilation Errors After Version Bump
@@ -428,7 +554,7 @@ For a pure management model version bump:
 - [ ] Add `fromX()` call to transformer chain in `registerTransformers()` (in descending order, before the previous `fromX-1()` call)
 - [ ] Add previous version to target versions array in `buildAndRegister()`
 - [ ] Update transformer tests if needed (typically only when adding new controller version to test against)
-- [ ] **Update `VERSIONS.md`** with the new model version and target WildFly version
+- [ ] (Optional) Update or create `VERSIONS.md` with the new model version and target WildFly version
 - [ ] Verify compilation succeeds
 - [ ] Run transformer tests to verify backward compatibility
 - [ ] Verify transformer chain call order is correct (descending: from6, from5, from4...)
