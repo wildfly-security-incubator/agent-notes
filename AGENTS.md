@@ -21,10 +21,12 @@ agent-notes/
 ├── INDEX.md                          # START HERE - navigation index
 ├── README.md                         # Repository overview
 ├── AGENTS.md                         # This file - minimal agent guidance
-└── feature-development/              # WildFly development guides
-    ├── management-model-version-bump-guide.md
-    ├── schema-version-bump-guide.md
-    └── subsystem-schema-test-requirements.md
+├── feature-development/              # WildFly development guides
+│   ├── management-model-version-bump-guide.md
+│   ├── schema-version-bump-guide.md
+│   └── subsystem-schema-test-requirements.md
+└── reproducer-development/           # Reproducer creation guides
+    └── wildfly-deployment-reproducer-guide.md
 ```
 
 ## Key Principles for Agents
