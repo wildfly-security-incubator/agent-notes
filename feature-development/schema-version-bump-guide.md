@@ -1747,6 +1747,7 @@ No current PREVIEW schema versions.
 - ❌ Skip "Create or update parser class" if pure version bump
 - ❌ Skip "Register parser in Extension" if pure version bump
 - ✅ Parser routing via `since()` handles it automatically
+- ✅ **pom.xml update required for COMMUNITY/PREVIEW schemas** (see below)
 
 **For elytron-oidc-client subsystem**:
 - ✅ Always update parser (create new or reuse via `getXMLDescription()`)
@@ -1757,12 +1758,68 @@ No current PREVIEW schema versions.
 - ✅ Tests auto-discover via `EnumSet.allOf()`
 - ✅ No test code changes needed
 
+### pom.xml Exclusions for Non-DEFAULT Schemas
+
+**Critical**: When adding COMMUNITY, PREVIEW, or EXPERIMENTAL schema versions, you must update `pom.xml` to exclude those test files from default XSD validation.
+
+**Why**: The xml-maven-plugin validates test XML files against the default schema (`wildfly-elytron_19_0.xsd`). Test files for other stability levels use different namespaces and will fail validation against the default schema.
+
+**Location**: `elytron/pom.xml` in the `xml-maven-plugin` configuration
+
+**Pattern**:
+```xml
+<plugin>
+    <groupId>org.codehaus.mojo</groupId>
+    <artifactId>xml-maven-plugin</artifactId>
+    <configuration>
+        <validationSets>
+            <validationSet>
+                <dir>src/test/resources/org/wildfly/extension/elytron</dir>
+                <includes>
+                    <include>*.xml</include>
+                </includes>
+                <excludes>
+                    <exclude>*-1.*.xml</exclude>
+                    <exclude>*-4.*.xml</exclude>
+                    <exclude>*-8.*.xml</exclude>
+                    <exclude>elytron-expressions.xml</exclude>
+                    <exclude>custom-policies.xml</exclude>
+                    <exclude>jacc-with-providers.xml</exclude>
+                    <exclude>legacy*.xml</exclude>
+                    <exclude>elytron-subsystem-community*.xml</exclude>
+                    <exclude>elytron-subsystem-preview*.xml</exclude>   <!-- ADD THIS -->
+                    <exclude>elytron-subsystem-experimental*.xml</exclude> <!-- IF NEEDED -->
+                </excludes>
+                <systemId>src/main/resources/schema/wildfly-elytron_19_0.xsd</systemId>
+            </validationSet>
+            <validationSet>
+                <dir>src/main/resources/schema</dir>
+            </validationSet>
+        </validationSets>
+    </configuration>
+</plugin>
+```
+
+**When to Add**:
+- Adding COMMUNITY schema → Add `<exclude>elytron-subsystem-community*.xml</exclude>`
+- Adding PREVIEW schema → Add `<exclude>elytron-subsystem-preview*.xml</exclude>`
+- Adding EXPERIMENTAL schema → Add `<exclude>elytron-subsystem-experimental*.xml</exclude>`
+
+**Build Error Without This**:
+```
+[ERROR] Failed to execute goal org.codehaus.mojo:xml-maven-plugin:1.1.0:validate (xml-validation)
+error: cvc-elt.1.a: Cannot find the declaration of element 'subsystem'.
+```
+
+This error occurs because the test file uses a namespace like `urn:wildfly:elytron:preview:19.0` but is being validated against the default schema that expects `urn:wildfly:elytron:19.0`.
+
 ---
 
-**Document Version**: 1.1
+**Document Version**: 1.2
 **Created**: 2026-05-27
 **Last Updated**: 2026-09-02
 **Updates**:
+- 2026-09-02: Added pom.xml exclusion requirement for non-DEFAULT stability test files
 - 2026-09-02: Added Subsystem Variations section (elytron vs elytron-oidc-client patterns)
 - 2026-09-02: Added critical schema inheritance rule for COMMUNITY schema creation
 - 2026-09-02: Added parser reuse patterns (automatic via `since()` checks)
