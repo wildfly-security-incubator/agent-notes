@@ -34,12 +34,97 @@ The schema version bump touches these core files:
 4. **Parser classes** - Classes that parse each schema version (e.g., `ElytronOidcSubsystemParser_X_Y.java`)
 5. **[`VERSIONS.md`](../wildfly/elytron-oidc-client/VERSIONS.md)** - Version history documentation (must be updated)
 
+## When Is a Schema Version Bump Needed?
+
+**Critical Check**: ALWAYS check the last tagged .Final WildFly release to determine if a bump is needed for each stability level.
+
+### Why This Check Matters
+
+- **Prevents double-bumping**: Multiple developers working on features for the same WildFly release
+- **Coordinates team work**: One schema bump creates shared base branch for multiple features
+- **Avoids merge conflicts**: Only one schema bump per stability level per development cycle
+- **Per-stability tracking**: Each stability level (DEFAULT, COMMUNITY, PREVIEW) is checked independently
+
+### How to Check
+
+**Step 1: Find the last .Final WildFly release tag**
+```bash
+# List recent WildFly tags
+git tag -l "*Final" | tail -5
+
+# Example output:
+# 32.0.0.Final
+# 33.0.0.Final
+# 34.0.0.Final  ← Most recent
+```
+
+**Step 2: Check schema versions for ALL stability levels in that tag**
+```bash
+# Example for elytron-oidc-client subsystem
+git show 34.0.0.Final:elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcSubsystemSchema.java
+
+# Look for the CURRENT map entries at each stability level:
+# - DEFAULT (no annotation): VERSION_3_0
+# - COMMUNITY (@Stability(COMMUNITY)): VERSION_COMMUNITY_2_0
+# - PREVIEW (@Stability(PREVIEW)): VERSION_PREVIEW_1_0
+
+# Example for elytron subsystem (multiple versions per stability)
+git show 34.0.0.Final:elytron/src/main/java/org/wildfly/extension/elytron/ElytronSubsystemSchema.java | grep "CURRENT\|VERSION_"
+
+# Look for CURRENT map: Feature.map(EnumSet.of(VERSION_19_0, VERSION_19_0_COMMUNITY))
+```
+
+**Step 3: Check the current schema versions on your branch/main**
+```bash
+# Check CURRENT map or latest enum entries
+grep -A 5 "CURRENT" elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcSubsystemSchema.java
+
+# For elytron subsystem (check specific stability levels)
+grep -A 10 "enum ElytronSubsystemSchema" elytron/src/main/java/org/wildfly/extension/elytron/ElytronSubsystemSchema.java
+```
+
+**Step 4: Compare PER STABILITY LEVEL and decide**
+
+**Example for elytron-oidc-client (single version per stability)**:
+
+| Stability | Last .Final | Current Branch | Decision |
+|-----------|-------------|----------------|----------|
+| DEFAULT | VERSION_3_0 | VERSION_3_0 | ✅ **Bump needed** if adding DEFAULT features |
+| DEFAULT | VERSION_3_0 | VERSION_4_0 | ❌ **Already bumped** - use VERSION_4_0 |
+| COMMUNITY | VERSION_COMMUNITY_2_0 | VERSION_COMMUNITY_2_0 | ✅ **Bump needed** if adding COMMUNITY features |
+| COMMUNITY | VERSION_COMMUNITY_2_0 | VERSION_COMMUNITY_3_0 | ❌ **Already bumped** - use VERSION_COMMUNITY_3_0 |
+
+**Example for elytron (CURRENT map pattern)**:
+
+| Check | Last .Final CURRENT | Current Branch CURRENT | Decision |
+|-------|---------------------|------------------------|----------|
+| DEFAULT | VERSION_19_0 | VERSION_19_0 | ✅ **Bump needed** for DEFAULT features |
+| DEFAULT | VERSION_19_0 | VERSION_20_0 | ❌ **Already bumped** - use VERSION_20_0 |
+| COMMUNITY | VERSION_18_0_COMMUNITY | VERSION_18_0_COMMUNITY | ✅ **Bump needed** for COMMUNITY features |
+| COMMUNITY | VERSION_18_0_COMMUNITY | VERSION_19_0_COMMUNITY | ❌ **Already bumped** - use VERSION_19_0_COMMUNITY |
+
+**If Bump NOT Needed at Your Stability Level**:
+- Someone else already created the bump for this stability level
+- Check Zulip #wildfly-elytron for announcement
+- Use existing bump branch as base for your feature
+- Add your feature to the EXISTING schema version
+- Do NOT create another bump at the same stability level
+
+**If Bump Needed at Your Stability Level**:
+- Post in Zulip #wildfly-elytron before proceeding
+- Coordinate with team to avoid duplicate work
+- Proceed with bump following this guide
+- Your bump becomes the shared base for other features at that stability level
+
+**Important**: Check EACH stability level independently - one may need a bump while another doesn't!
+
 ## Pre-Bump Checklist
 
 Before bumping the schema version, verify:
 
-- [ ] **Current Schema Version**: Identify the current schema version (check `CURRENT` constant in `ElytronOidcSubsystemSchema`)
-- [ ] **Last Released Version**: Check ALL schema versions at ALL stability levels in the last WildFly .Final tag
+- [ ] **CRITICAL: Last .Final Tag Check** - Followed the 4-step check above for each stability level
+- [ ] **Current Schema Version**: Identified the current schema version (check `CURRENT` constant in `ElytronOidcSubsystemSchema`)
+- [ ] **Last Released Version**: Checked ALL schema versions at ALL stability levels in the last WildFly .Final tag
   - Use: `git show <last-final-tag>:elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcSubsystemSchema.java`
   - **Critical**: Once a WildFly .Final release is published, those schema versions are **frozen**
   - Compare each stability level separately:
@@ -845,6 +930,46 @@ CURRENT = Feature.map(EnumSet.of(VERSION_3_0));
 - Existing XSD files and their naming pattern
 - The most recent XSD file to use as a template
 - Namespace URI in the XSD file
+- Element ordering constraints in the schema
+
+#### XSD Sequence Constraints and Element Ordering
+
+**Critical**: XSD `xs:sequence` constraints dictate strict element ordering. Elements must appear in the exact order defined by the sequence.
+
+**Why This Matters**:
+- XSD uses `xs:sequence` when elements must appear in a specific order
+- `xs:all` would allow any order but doesn't support `maxOccurs="unbounded"`
+- Marshallers output attributes in the order they appear in ATTRIBUTES arrays
+- ATTRIBUTES array order must match XSD sequence order
+
+**Example XSD Constraint**:
+```xml
+<xs:sequence>
+    <xs:element name="principal-query" type="authenticationQueryType" maxOccurs="unbounded"/>
+    <xs:element name="brute-force-protection" type="bruteForceProtectionType" minOccurs="0"/>
+</xs:sequence>
+```
+
+This means `principal-query` MUST appear before `brute-force-protection` in XML.
+
+**Corresponding ATTRIBUTES Array** (JdbcRealmDefinition.java):
+```java
+static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] {
+    // ... other attributes ...
+    PRINCIPAL_QUERIES,        // Must come before BRUTE_FORCE_PROTECTION
+    BRUTE_FORCE_PROTECTION    // Must come after PRINCIPAL_QUERIES
+};
+```
+
+**Impact**:
+- Marshallers always output correct order automatically
+- Hand-written XML would fail validation if in wrong order
+- No code changes needed for this constraint, just awareness
+
+**When Adding New Elements**:
+1. Determine correct position in XSD sequence
+2. Ensure ATTRIBUTES array matches XSD order
+3. Test with hand-written XML to verify validation
 
 **XSD File Naming Convention**:
 - DEFAULT stability: `wildfly-elytron-oidc-client_X_Y.xsd` (e.g., `wildfly-elytron-oidc-client_2_0.xsd`)
@@ -955,6 +1080,37 @@ static final Map<Stability, ElytronSubsystemSchema> CURRENT =
 - Existing parser classes (e.g., `ElytronOidcSubsystemParser_5_0.java`)
 - Whether the new schema requires a new parser or can reuse an existing one
 - Parser registration in `ElytronOidcExtension.java`
+- Whether you're referencing shared attribute constants from other classes
+
+#### Static Imports for Shared Attribute Constants
+
+When building parser attribute arrays that reference constants from other classes, prefer static imports for cleaner, more consistent code.
+
+**Best Practice**:
+```java
+// Check for naming conflicts first
+grep -n "BRUTE_FORCE_PROTECTION" PropertiesRealmDefinition.java
+
+// If no conflict - add static import
+import static org.wildfly.extension.elytron.RealmDefinitions.BRUTE_FORCE_PROTECTION;
+
+// Use unqualified reference in ATTRIBUTES array
+static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] { 
+    USERS_PROPERTIES, GROUPS_PROPERTIES, GROUPS_ATTRIBUTE,
+    BRUTE_FORCE_PROTECTION  // Clean, matches other array elements
+};
+```
+
+**When NOT to use static import**:
+- If the target class defines a conflicting constant with the same name
+- Keep qualified reference: `RealmDefinitions.BRUTE_FORCE_PROTECTION`
+
+**Benefits**:
+- Improves readability and consistency in ATTRIBUTES arrays
+- Makes it clear which attributes are local vs. shared
+- Matches the style of other array elements
+
+**Note**: For Elytron subsystem's version-chaining parser pattern, see the Subsystem Variations section below.
 
 **What to Do**:
 
@@ -1100,12 +1256,65 @@ public PersistentResourceXMLDescription getXMLDescription() {
 **What to Check**:
 - Existing test XML files and their naming pattern
 - The most recent test XML file to use as a template
+- Whether this schema is in the CURRENT map (determines naming prefix)
+
+#### Critical Policy: Schema Enum Permanence and Test File Lifecycle
+
+**Schema enum entries are permanent** - Once added to the schema enum (e.g., `ElytronSubsystemSchema`, `ElytronOidcSubsystemSchema`), entries MUST remain forever for runtime backward compatibility.
+
+**Test framework tests ALL enum versions** - `EnumSet.allOf(ElytronSubsystemSchema.class)` means every enum entry needs a corresponding test file.
+
+**Test File Naming Rules**:
+
+1. **Current versions** (in `CURRENT` map):
+   - `elytron-subsystem-<version>.xml` or `elytron-subsystem-<stability>-<version>.xml`
+   
+2. **Historical versions** (NOT in CURRENT map):
+   - `legacy-elytron-subsystem-<version>.xml` or `legacy-elytron-subsystem-<stability>-<version>.xml`
+
+3. **No special cases** - All non-current versions use the same `legacy-` prefix pattern
+
+**Example**:
+```java
+// ElytronSubsystemSchema.java
+static final Map<Stability, ElytronSubsystemSchema> CURRENT = Feature.map(
+    EnumSet.of(VERSION_19_0, VERSION_19_0_COMMUNITY));
+```
+
+**Current schemas** (in CURRENT map):
+- `elytron-subsystem-19.0.xml` (DEFAULT)
+- `elytron-subsystem-community-19.0.xml` (COMMUNITY)
+
+**Historical schema** (not in CURRENT map):
+- `legacy-elytron-subsystem-community-18.0.xml`
+
+**When Schema Promoted** (e.g., 19.0 → 20.0):
+1. Add VERSION_20_0 to enum (never remove VERSION_19_0)
+2. Update CURRENT map to VERSION_20_0
+3. Rename `elytron-subsystem-19.0.xml` → `legacy-elytron-subsystem-19.0.xml`
+4. Create new `elytron-subsystem-20.0.xml`
+
+**Test Failure Indicates Naming Issue**:
+```
+elytron-subsystem-community-18.0.xml url is null
+```
+This means: Enum exists, but filename doesn't match expected pattern (missing `legacy-` prefix or wrong stability marker).
+
+**Why This Matters**:
+- Enum permanence ensures runtime backward compatibility
+- Test file naming tracks which schemas are current vs. historical
+- Automatic test discovery requires consistent naming
+- Missing or misnamed test files cause test failures
 
 **Test XML File Naming Convention**:
-- DEFAULT stability: `elytron-oidc-client-X.Y.xml` (e.g., `elytron-oidc-client-2.0.xml`)
-- COMMUNITY stability: `elytron-oidc-client-community-X.Y.xml` (e.g., `elytron-oidc-client-community-2.0.xml`)
-- PREVIEW stability: `elytron-oidc-client-preview-X.Y.xml` (e.g., `elytron-oidc-client-preview-4.0.xml`)
-- EXPERIMENTAL stability: `elytron-oidc-client-experimental-X.Y.xml` (if used)
+- DEFAULT stability (CURRENT): `elytron-oidc-client-X.Y.xml` (e.g., `elytron-oidc-client-2.0.xml`)
+- DEFAULT stability (historical): `legacy-elytron-oidc-client-X.Y.xml`
+- COMMUNITY stability (CURRENT): `elytron-oidc-client-community-X.Y.xml` (e.g., `elytron-oidc-client-community-2.0.xml`)
+- COMMUNITY stability (historical): `legacy-elytron-oidc-client-community-X.Y.xml`
+- PREVIEW stability (CURRENT): `elytron-oidc-client-preview-X.Y.xml` (e.g., `elytron-oidc-client-preview-4.0.xml`)
+- PREVIEW stability (historical): `legacy-elytron-oidc-client-preview-X.Y.xml`
+- EXPERIMENTAL stability (CURRENT): `elytron-oidc-client-experimental-X.Y.xml` (if used)
+- EXPERIMENTAL stability (historical): `legacy-elytron-oidc-client-experimental-X.Y.xml`
 
 **What to Do**:
 
@@ -1673,6 +1882,46 @@ Different WildFly subsystems use different patterns for schema versioning. This 
 - Create new parser class OR reuse via `getXMLDescription()` method
 - Explicitly register in `initializeParsers()`
 
+#### Key Differences from Elytron Subsystem
+
+**Elytron-OIDC-Client Subsystem Pattern**: Requires explicit parser fields per version.
+
+**Critical Differences**:
+
+| Aspect | Elytron Subsystem | Elytron-OIDC-Client Subsystem |
+|--------|-------------------|-------------------------------|
+| **Parser Routing** | Automatic via `since()` checks | Explicit registration per version |
+| **Schema Bump Impact** | NO parser changes for pure bumps | Parser changes required for every bump |
+| **Parser Fields** | Named by version (e.g., `propertiesRealmParser_19_0`) | Separate parser class per version |
+| **Version Management** | Automatic routing based on XML namespace | Manual per-version registration |
+
+**Example - Elytron (Automatic)**:
+```java
+// Schema bump: VERSION_19_0 → VERSION_19_0_COMMUNITY
+// Parser routing uses since() checks
+if (this.since(VERSION_19_0)) {
+    builder.addChild(realmParser.propertiesRealmParser_19_0_community);
+    // ↑ Automatically includes VERSION_19_0_COMMUNITY
+}
+// NO parser changes needed for pure version bump
+```
+
+**Example - OIDC-Client (Explicit)**:
+```java
+// Each schema version explicitly registered
+context.setSubsystemXmlMapping(SUBSYSTEM_NAME,
+    ElytronOidcSubsystemSchema.VERSION_5_0.getNamespace().getUri(),
+    ElytronOidcSubsystemParser_5_0::new);
+context.setSubsystemXmlMapping(SUBSYSTEM_NAME,
+    ElytronOidcSubsystemSchema.VERSION_6_0.getNamespace().getUri(),
+    ElytronOidcSubsystemParser_6_0::new);  // <-- NEW REGISTRATION REQUIRED
+// Parser changes required for every schema bump
+```
+
+**When Writing Guides**: Clearly distinguish which pattern applies to which subsystem family.
+
+**Key Quote**: "Elytron subsystem uses automatic parser routing via `since()` checks. Pure schema bumps require NO parser changes (unlike elytron-oidc-client)."
+
 ### elytron Subsystem Pattern
 
 **Characteristics**:
@@ -1686,6 +1935,129 @@ Different WildFly subsystems use different patterns for schema versioning. This 
 - Example: `if (this.since(VERSION_19_0))` automatically handles `VERSION_19_0_COMMUNITY`
 
 **Key Difference**: Parser reuse is automatic, not explicit
+
+#### Version-Chaining Static Helpers for Parser Attributes
+
+**Elytron Subsystem Pattern**: Use layered static helper methods that chain from base version to newer versions when adding attributes to parsers. This creates a clear version progression and single source of truth.
+
+**Pattern Structure**:
+```java
+// Base version - original attributes
+static PersistentResourceXMLBuilder propertiesRealmAttributes(PersistentResourceXMLBuilder builder) {
+    return builder
+        .addAttributes(PropertiesRealmDefinition.GROUPS_ATTRIBUTE)
+        .addAttribute(PropertiesRealmDefinition.USERS_PROPERTIES, 
+            AttributeParser.OBJECT_PARSER, AttributeMarshaller.ATTRIBUTE_OBJECT)
+        .addAttribute(PropertiesRealmDefinition.GROUPS_PROPERTIES,
+            AttributeParser.OBJECT_PARSER, AttributeMarshaller.ATTRIBUTE_OBJECT);
+}
+
+// Version 14.0 - chains from base, adds new attributes
+static PersistentResourceXMLBuilder propertiesRealmAttributes_14_0(PersistentResourceXMLBuilder builder) {
+    return propertiesRealmAttributes(builder)
+        .addAttribute(PropertiesRealmDefinition.HASH_CHARSET)
+        .addAttribute(PropertiesRealmDefinition.HASH_ENCODING);
+}
+
+// Version 19.0 community - chains from 14.0, adds brute-force-protection
+static PersistentResourceXMLBuilder propertiesRealmAttributes_19_0_community(PersistentResourceXMLBuilder builder) {
+    return propertiesRealmAttributes_14_0(builder)
+        .addAttribute(RealmDefinitions.BRUTE_FORCE_PROTECTION,
+            AttributeParser.OBJECT_PARSER, AttributeMarshaller.ATTRIBUTE_OBJECT);
+}
+
+// Usage in parser definition
+private final PersistentResourceXMLDescription propertiesRealmParser_19_0_community = 
+    propertiesRealmAttributes_19_0_community(
+        builder(PathElement.pathElement(PROPERTIES_REALM))
+    ).build();
+```
+
+**Benefits**:
+- Version progression visible in method names
+- Single source of truth per version
+- Easy to maintain - changes to a version affect all parsers that chain from it
+- Consistent pattern across all component types
+
+**How Automatic Routing Works**:
+The subsystem schema uses `this.since(VERSION_X_Y)` checks to conditionally add parsers:
+
+```java
+private void addRealmParser(PersistentResourceXMLBuilder builder) {
+    RealmParser realmParser = new RealmParser();
+    if (this.since(ElytronSubsystemSchema.VERSION_19_0)) {
+        builder.addChild(realmParser.propertiesRealmParser_19_0_community);
+        // ↑ This automatically applies to VERSION_19_0_COMMUNITY too
+        // because VERSION_19_0_COMMUNITY.since(VERSION_19_0) returns true
+    } else if (this.since(ElytronSubsystemSchema.VERSION_14_0)) {
+        builder.addChild(realmParser.propertiesRealmParser_14_0);
+    }
+    // ...
+}
+```
+
+**Critical**: This pattern works specifically with Elytron's automatic parser routing. The `since()` method checks if the current schema version is equal to or newer than the specified version, which automatically includes newer versions at different stability levels.
+
+#### Custom Component Integration Pattern
+
+**Elytron Subsystem Pattern**: Custom components (`custom-realm`, `custom-modifiable-realm`) require coordinated implementation across three layers.
+
+**Problem**: Custom components use `CustomComponentTransformer` interface which originally lacked access to `OperationContext` and `ModelNode`, making management model configuration non-functional.
+
+**Three-Layer Fix**:
+
+**1. Runtime Layer** - Update transformer interface:
+```java
+// CustomComponentDefinition.java
+public interface CustomComponentTransformer<T> {
+    T prepareTransformer(
+        OperationContext context,  // ADD THESE TWO
+        ModelNode model,           // PARAMETERS
+        String className,
+        Map<String, String> configuration
+    );
+}
+
+// ComponentAddHandler.performRuntime() - pass actual values
+T transformer = transformerSupplier.prepareTransformer(
+    context,  // was: null
+    model,    // was: new ModelNode()
+    className,
+    configuration
+);
+```
+
+**2. Parser Layer** - Add attribute to custom realm parsers:
+```java
+// RealmParser.java
+static PersistentResourceXMLBuilder customRealmAttributes_19_0_community(
+        PersistentResourceXMLBuilder builder) {
+    return customRealmAttributes(builder)
+        .addAttribute(RealmDefinitions.BRUTE_FORCE_PROTECTION,
+            AttributeParser.OBJECT_PARSER, AttributeMarshaller.ATTRIBUTE_OBJECT);
+}
+
+private final PersistentResourceXMLDescription customRealmParser_19_0_community = 
+    customRealmAttributes_19_0_community(
+        builder(PathElement.pathElement(CUSTOM_REALM))
+    ).build();
+```
+
+**3. XSD Layer** - Add element to schema:
+```xml
+<!-- wildfly-elytron_community_19_0.xsd -->
+<xs:complexType name="customRealmType">
+    <xs:sequence>
+        <xs:element name="configuration" type="configurationType" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="brute-force-protection" type="bruteForceProtectionType" minOccurs="0"/>
+    </xs:sequence>
+    ...
+</xs:complexType>
+```
+
+**Critical**: All three layers must be implemented together. Missing any layer causes silent failure (management model accepts values but runtime ignores them).
+
+**When to Apply**: Only for custom components that allow user-provided implementations via Java classes
 
 ### VERSIONS.md Structure
 
@@ -1815,10 +2187,23 @@ This error occurs because the test file uses a namespace like `urn:wildfly:elytr
 
 ---
 
-**Document Version**: 1.2
+**Document Version**: 1.4
 **Created**: 2026-05-27
-**Last Updated**: 2026-09-02
+**Last Updated**: 2026-09-12
 **Updates**:
+- 2026-09-12: Added critical version bump check requirements:
+  - **"When Is a Schema Version Bump Needed?" section**: 4-step process to check last .Final tag
+  - **Per-stability-level checks**: Each stability level (DEFAULT, COMMUNITY, PREVIEW) checked independently
+  - **Prevents double-bumping**: Explains why checking last release is critical
+  - **Decision tables**: Last .Final vs Current per stability level → Bump needed or not
+  - **Enhanced Pre-Bump Checklist**: Emphasizes last .Final tag check as CRITICAL first step
+- 2026-09-11: Integrated lessons from WFCORE-7193 feedback:
+  - Added XSD sequence constraints and element ordering (FB-11)
+  - Added static imports for shared attribute constants (FB-2)
+  - Expanded version-chaining static helpers pattern for Elytron (FB-3)
+  - Clarified parser pattern differences between Elytron and OIDC-Client subsystems (FB-3-OIDC)
+  - Added critical policy on schema enum permanence and test file lifecycle (FB-5)
+  - Added custom component three-layer integration pattern (FB-9)
 - 2026-09-02: Added pom.xml exclusion requirement for non-DEFAULT stability test files
 - 2026-09-02: Added Subsystem Variations section (elytron vs elytron-oidc-client patterns)
 - 2026-09-02: Added critical schema inheritance rule for COMMUNITY schema creation
