@@ -41,18 +41,26 @@ Located in `reproducer-development/`:
 
 Located in `feature-development/`:
 
+#### Feature Implementation
+- **[feature-implementation-guide.md](feature-development/feature-implementation-guide.md)**
+  - **Purpose**: Guide for implementing new features in WildFly subsystems (after version bumps)
+  - **Use When**: Adding new management attributes, XML configuration options, or subsystem capabilities
+  - **Key Topics**: OBJECT attributes, string handling, parser patterns, runtime integration, backward compatibility
+  - **Related To**: Requires version bumps first; see version management guides below
+  - **Prerequisites**: Coordinate version bumps in Zulip #wildfly-elytron before starting
+
 #### Version Management
 - **[management-model-version-bump-guide.md](feature-development/management-model-version-bump-guide.md)**
   - **Purpose**: Guide for bumping WildFly subsystem management model versions
   - **Use When**: Making changes to subsystem management API (attributes, operations, capabilities)
   - **Key Topics**: Version bump process, transformer chains, PR review guidelines, stability levels
-  - **Related To**: Schema version bumps (often done together)
+  - **Related To**: Schema version bumps (often done together); prerequisite for feature implementation
 
 - **[schema-version-bump-guide.md](feature-development/schema-version-bump-guide.md)**
   - **Purpose**: Guide for bumping WildFly subsystem XML schema versions
   - **Use When**: Changing XML configuration format, adding/removing elements, promoting stability levels
   - **Key Topics**: Schema versioning, XSD files, parser registration, stability level annotations
-  - **Related To**: Management model version bumps (often coordinated)
+  - **Related To**: Management model version bumps (often coordinated); prerequisite for feature implementation
 
 #### Testing Requirements
 - **[subsystem-schema-test-requirements.md](feature-development/subsystem-schema-test-requirements.md)**
@@ -74,6 +82,9 @@ Located in `feature-development/`:
 | Test WildFly SNAPSHOT builds | wildfly-development-workflow.md | wildfly-deployment-reproducer-guide.md |
 | Override component versions | wildfly-development-workflow.md | wildfly-deployment-reproducer-guide.md |
 | Override Soteria version | jakarta-ee-security-patterns.md | wildfly-development-workflow.md |
+| Implement new subsystem feature | feature-implementation-guide.md | Both version bump guides + test requirements |
+| Add management attribute | feature-implementation-guide.md | management-model-version-bump-guide.md |
+| Add XML configuration option | feature-implementation-guide.md | schema-version-bump-guide.md |
 | Bump management model version | management-model-version-bump-guide.md | schema-version-bump-guide.md |
 | Bump schema version | schema-version-bump-guide.md | management-model-version-bump-guide.md |
 | Create/update test files | subsystem-schema-test-requirements.md | schema-version-bump-guide.md |
@@ -103,13 +114,23 @@ Located in `feature-development/`:
 - **Manifest**: wildfly-development-workflow.md
 - **Component override**: wildfly-development-workflow.md
 - **Version bump**: management-model-version-bump-guide.md, schema-version-bump-guide.md
+- **Feature implementation**: feature-implementation-guide.md
+- **OBJECT attribute**: feature-implementation-guide.md
+- **Attribute definition**: feature-implementation-guide.md, management-model-version-bump-guide.md
+- **String constants**: feature-implementation-guide.md
+- **Resource bundles**: feature-implementation-guide.md
+- **Measurement units**: feature-implementation-guide.md
 - **Transformer**: management-model-version-bump-guide.md
-- **Schema/XSD**: schema-version-bump-guide.md
-- **Parser**: schema-version-bump-guide.md
+- **Schema/XSD**: schema-version-bump-guide.md, feature-implementation-guide.md
+- **Parser**: schema-version-bump-guide.md, feature-implementation-guide.md
+- **Runtime integration**: feature-implementation-guide.md
+- **Backward compatibility**: feature-implementation-guide.md, management-model-version-bump-guide.md
+- **System properties**: feature-implementation-guide.md
 - **Test coverage**: subsystem-schema-test-requirements.md
 - **Stability levels**: All guides (PREVIEW, COMMUNITY, DEFAULT, EXPERIMENTAL)
 - **PR review**: management-model-version-bump-guide.md, schema-version-bump-guide.md
 - **WildFly release**: All guides (version targeting)
+- **Zulip coordination**: feature-implementation-guide.md
 
 ## Document Structure Conventions
 
@@ -157,5 +178,5 @@ This index should be updated when:
 
 ---
 
-**Last Updated**: 2026-08-28
-**Index Version**: 1.2
+**Last Updated**: 2026-09-12
+**Index Version**: 1.3

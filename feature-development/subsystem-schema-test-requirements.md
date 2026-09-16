@@ -11,9 +11,49 @@ Test XML files are located in:
 src/test/resources/org/wildfly/extension/{subsystem-name}/
 ```
 
-Naming convention:
-- `{subsystem-name}-{version}.xml` - For stable versions (e.g., `elytron-oidc-client-1.0.xml`)
-- `{subsystem-name}-preview-{version}.xml` - For preview versions (e.g., `elytron-oidc-client-preview-2.0.xml`)
+### Naming Convention Based on Schema Status
+
+Test file naming depends on whether the schema version is in the subsystem's `CURRENT` map:
+
+**Current Schema Versions** (in `{Subsystem}Schema.CURRENT` map):
+- `{subsystem-name}-{version}.xml` - For DEFAULT stability (e.g., `elytron-subsystem-19.0.xml`)
+- `{subsystem-name}-{stability}-{version}.xml` - For other stabilities (e.g., `elytron-subsystem-community-19.0.xml`)
+
+**Historical Schema Versions** (NOT in CURRENT map):
+- `legacy-{subsystem-name}-{version}.xml` - For DEFAULT stability (e.g., `legacy-elytron-subsystem-18.0.xml`)
+- `legacy-{subsystem-name}-{stability}-{version}.xml` - For other stabilities (e.g., `legacy-elytron-subsystem-community-18.0.xml`)
+
+### Schema Lifecycle and Test File Management
+
+**Critical Policy**: Schema enum entries are permanent for backward compatibility. Once added to the subsystem's schema enum (e.g., `ElytronSubsystemSchema`), entries MUST remain forever to support runtime schema version negotiation.
+
+**Test Framework Requirements**: The test framework uses `EnumSet.allOf({Subsystem}Schema.class)`, which means every enum entry needs a corresponding test file. The framework locates test files by converting enum names to expected filenames.
+
+**When Schema Is Promoted** (e.g., 19.0 → 20.0):
+
+1. Add `VERSION_20_0` to schema enum (NEVER remove `VERSION_19_0`)
+2. Update `CURRENT` map to point to `VERSION_20_0`
+3. Rename test file: `elytron-subsystem-19.0.xml` → `legacy-elytron-subsystem-19.0.xml`
+4. Create new test file: `elytron-subsystem-20.0.xml`
+
+**Test Failure Indicator**: If you see an error like:
+```
+elytron-subsystem-community-18.0.xml url is null
+```
+This means a schema enum entry exists but the test file doesn't match the expected naming pattern (likely missing the `legacy-` prefix).
+
+**Example from Elytron Subsystem** (WildFly 42):
+
+```java
+// ElytronSubsystemSchema.java
+static final Map<Stability, ElytronSubsystemSchema> CURRENT = Feature.map(
+    EnumSet.of(VERSION_19_0, VERSION_19_0_COMMUNITY));
+```
+
+Test files:
+- `elytron-subsystem-19.0.xml` (DEFAULT, in CURRENT)
+- `elytron-subsystem-community-19.0.xml` (COMMUNITY, in CURRENT)
+- `legacy-elytron-subsystem-community-18.0.xml` (COMMUNITY, NOT in CURRENT)
 
 ## Test Requirements
 
@@ -51,11 +91,96 @@ This makes it easy to verify coverage at a glance and ensures new attributes add
 
 **Alternative attributes**: Some attributes are defined as mutually exclusive alternatives (via `.setAlternatives(...)` in Java, e.g., `auth-server-url` and `provider-url`). Combined coverage across all entries satisfies the requirement — one entry can use `auth-server-url` and another can use `provider-url`, and each needs both a literal and expression form across those combined entries.
 
-### 1b. Minimal Configuration Coverage
+### 1b. Expression Coverage for OBJECT Attributes
+
+**OBJECT attributes** (defined with `ObjectTypeAttributeDefinition`) contain multiple nested fields. Expression testing for OBJECT attributes follows a different pattern than simple attributes.
+
+**Pattern: Embed Expression Tests in Version-Specific Test Files**
+
+For OBJECT attributes, include both literal and expression variants directly in the same test file, placing the expression entry immediately after the corresponding literal entry:
+
+**Elytron Subsystem Pattern** (from WFCORE-7193):
+
+```xml
+<!-- Literal entry -->
+<properties-realm name="PropRealm" groups-attribute="groups">
+    <brute-force-protection enabled="true" max-failed-attempts="5" 
+        lockout-interval="10" session-timeout="15" max-cached-sessions="1000"/>
+</properties-realm>
+
+<!-- Expression entry - immediately after literal -->
+<properties-realm name="PropRealm-expressions" groups-attribute="groups">
+    <brute-force-protection 
+        enabled="${exp.bf.enabled:true}" 
+        max-failed-attempts="${exp.bf.max-attempts:5}"
+        lockout-interval="${exp.bf.lockout:10}" 
+        session-timeout="${exp.bf.timeout:15}" 
+        max-cached-sessions="${exp.bf.sessions:1000}"/>
+</properties-realm>
+```
+
+**Key Requirements**:
+- Use standard WildFly expression format: `${exp.category.field:default}`
+- Default values in expressions should match literal entry values
+- Place expression entry immediately after corresponding literal entry
+- Cover ALL fields in the OBJECT attribute with expressions
+- Use descriptive naming suffix like `-expressions` to indicate purpose
+
+**Why Embedded (Not Separate Files)**:
+- OBJECT attributes are complex to maintain in separate expression test files
+- Version-specific attributes need version-specific expression tests
+- Easier to keep literal and expression tests synchronized
+- Clearer relationship between literal and expression coverage
+
+**Comparison with Simple Attributes**: Simple attributes (defined with `SimpleAttributeDefinition`) can use the "full literal" + "full expression" entry pattern described in Section 1a. OBJECT attributes require per-component embedded expression entries.
+
+### 1c. Coverage Across All Applicable Component Types
+
+When adding a new attribute that applies to multiple component types, you MUST add test coverage for ALL applicable component types.
+
+**Coverage Checklist** (when adding cross-component attributes):
+
+1. List all component types that support the new attribute
+2. For each type, add a literal test entry
+3. For each type, add an expression test entry (immediately after literal)
+4. Verify any supporting definitions needed (e.g., `<dir-contexts>` for LDAP realms)
+
+**Elytron Subsystem Pattern** (WFCORE-7193 - brute-force-protection on 8 realm types):
+
+```xml
+<!-- 1. Properties Realm -->
+<properties-realm name="PropRealm" groups-attribute="groups">
+    <brute-force-protection enabled="true" max-failed-attempts="5"/>
+</properties-realm>
+<properties-realm name="PropRealm-expressions" groups-attribute="groups">
+    <brute-force-protection enabled="${exp.bf.enabled:true}" 
+        max-failed-attempts="${exp.bf.max-attempts:5}"/>
+</properties-realm>
+
+<!-- 2. Filesystem Realm -->
+<filesystem-realm name="FileRealm" path="...">
+    <brute-force-protection enabled="true" max-failed-attempts="5"/>
+</filesystem-realm>
+<filesystem-realm name="FileRealm-expressions" path="...">
+    <brute-force-protection enabled="${exp.bf.enabled:true}" 
+        max-failed-attempts="${exp.bf.max-attempts:5}"/>
+</filesystem-realm>
+
+<!-- ... repeat for all 8 realm types ... -->
+```
+
+**Parser-Supported vs Non-Parser Components**:
+- **Parser-supported components** (have dedicated parser entries): Require XML test coverage
+- **Non-parser components** (registered via code, like custom-realm): May not appear in parser test files
+
+Incomplete coverage can miss parser bugs that would only surface in production. In WFCORE-7193, initial coverage had only 2 of 8 realm types; complete review found 6 missing types.
+
+### 1d. Minimal Configuration Coverage
 
 > **⚠ BLOCKED** — Implementation is pending a schema bug fix. See
 > `notes/bug-xsd-all-minoccurs-empty-elements.md` for details. Do not add
 > minimal entries to test XML files until the bug is resolved.
+> This section remains in the guide for future reference.
 
 In addition to the "full literal" and "full expression" coverage patterns, each root element in the subsystem must have at least one **minimal** entry — an entry that contains ONLY the management address `name` attribute, with NO optional child elements. This verifies:
 
@@ -81,9 +206,60 @@ In addition to the "full literal" and "full expression" coverage patterns, each 
 
 **CRITICAL**: Element ordering in test XML files MUST match the marshaller's output order, NOT the XSD schema order.
 
-The XSD schema uses `<xs:all>` which allows elements in any order during parsing, but the marshaller outputs elements in a specific order determined by the subsystem's write logic.
+#### XSD Schema Constraints: xs:all vs xs:sequence
 
-**How to Determine Correct Ordering:**
+XSD schemas use two primary element ordering mechanisms:
+
+**`<xs:all>`** - Elements can appear in any order during parsing:
+```xml
+<xs:all>
+    <xs:element name="realm-public-key" type="xs:string" minOccurs="0"/>
+    <xs:element name="auth-server-url" type="xs:string" minOccurs="0"/>
+</xs:all>
+```
+- Allows any element order in XML input
+- Cannot use `maxOccurs="unbounded"` on child elements
+- Marshaller still outputs in a specific order (typically attribute registration order)
+
+**`<xs:sequence>`** - Elements MUST appear in the exact order specified:
+```xml
+<xs:sequence>
+    <xs:element name="principal-query" type="authenticationQueryType" maxOccurs="unbounded"/>
+    <xs:element name="brute-force-protection" type="bruteForceProtectionType" minOccurs="0"/>
+</xs:sequence>
+```
+- Enforces strict ordering (required for `maxOccurs="unbounded"`)
+- Parser rejects XML with wrong element order
+- Marshaller outputs in the order defined in the ATTRIBUTES array
+
+#### Marshaller Behavior and ATTRIBUTES Array
+
+The marshaller outputs elements in the order they appear in the resource definition's `ATTRIBUTES` array:
+
+**Example** (JdbcRealmDefinition.java):
+```java
+static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] {
+    // ... other attributes ...
+    PRINCIPAL_QUERIES,        // Must come before BRUTE_FORCE_PROTECTION
+    BRUTE_FORCE_PROTECTION    // Must come after PRINCIPAL_QUERIES
+};
+```
+
+**Test XML must match**:
+```xml
+<jdbc-realm name="JdbcRealmModular" ...>
+    <principal-query .../>      <!-- First -->
+    <principal-query .../>      <!-- Can have multiple -->
+    <brute-force-protection .../> <!-- Must be last -->
+</jdbc-realm>
+```
+
+**Impact**:
+- For `xs:sequence` schemas: Wrong order fails XML validation
+- For `xs:all` schemas: Wrong order fails test comparison (marshaller vs input)
+- Marshaller always outputs in ATTRIBUTES array order
+
+#### How to Determine Correct Ordering
 
 1. Run the test with your initial XML file
 2. If the test fails with a comparison error, examine the test output in:
@@ -173,20 +349,23 @@ When a test fails:
 
 When reviewing or creating subsystem test files:
 
-- [ ] Test file exists for each schema version
+- [ ] Test file exists for each schema enum version (including legacy versions)
+- [ ] Test file naming follows CURRENT map convention (legacy- prefix for non-current)
 - [ ] Namespace in test XML matches schema version
 - [ ] All schema elements are represented at least once as a literal value
 - [ ] All schema elements are represented at least once as an expression (`${...}` form)
 - [ ] All attributes (including optional) are included in both literal and expression form
-- [ ] Element ordering matches marshaller output (verify by running tests)
+- [ ] For OBJECT attributes: literal and expression entries are embedded in the same file
+- [ ] For cross-component attributes: coverage exists for ALL applicable component types
+- [ ] Element ordering matches marshaller output and XSD constraints (xs:sequence vs xs:all)
 - [ ] Multiple instances of repeatable elements are included
 - [ ] Test values are realistic but clearly for testing
 - [ ] New version test files build upon previous versions
 - [ ] Coverage fixes in any version have been propagated to all later versions
-- [ ] Each root element has at least one minimal entry with no optional children
+- [ ] Each root element has at least one minimal entry (blocked pending XSD bug fix)
 - [ ] Tests pass without comparison failures
 
-**Coverage verification strategy**: The most reliable way to verify expression coverage is to identify the "full literal" entry for each complex type and check it contains every attribute, then do the same for the "full expression" entry. Cross-file agent verification is prone to false positives — always confirm reported gaps by directly reading the XML before making changes.
+**Coverage verification strategy**: The most reliable way to verify expression coverage is to identify the "full literal" entry for each complex type and check it contains every attribute, then do the same for the "full expression" entry. For OBJECT attributes, verify literal and expression variants exist as paired entries. Cross-file agent verification is prone to false positives — always confirm reported gaps by directly reading the XML before making changes.
 
 ## Common Pitfalls
 
@@ -199,7 +378,11 @@ When reviewing or creating subsystem test files:
 7. **Not Cascading Fixes**: Fixing a gap in one version but forgetting to apply the same fix to all later versions
 8. **Confusing Path Keys with Model Attributes**: The `name` attribute on credentials and redirect-rewrite-rules is a management resource address key — it doesn't support expressions and doesn't need expression coverage
 9. **Agent False Positives in Coverage Checks**: Automated agents scanning XML for coverage can miss entries that exist in different parts of the file. Always verify a reported gap by manually reading the XML before acting on it. Confirmed gaps will also exist identically in all versions derived from the one with the gap.
-10. **Missing Minimal Configuration**: Only testing full configurations and forgetting to verify that entries with only the required name attribute (and no optional children) can be parsed and marshalled
+10. **Missing Minimal Configuration**: Only testing full configurations and forgetting to verify that entries with only the required name attribute (and no optional children) can be parsed and marshalled (currently blocked - see Section 1d)
+11. **Wrong Test File Naming for Historical Schemas**: Forgetting to rename test files with `legacy-` prefix when a schema version is no longer in the CURRENT map. Results in "url is null" test failures.
+12. **Incomplete Component Type Coverage**: When adding a new attribute that applies to multiple component types (e.g., brute-force-protection on 8 realm types), only testing a subset of component types and missing parser bugs in the others
+13. **Separate Expression Files for OBJECT Attributes**: Creating separate expression test files for OBJECT attributes instead of embedding literal and expression variants in the same file. This makes synchronization difficult and version-specific attributes harder to maintain.
+14. **Violating xs:sequence Order**: For schemas using `xs:sequence`, placing elements in wrong order causes XML validation failures. Always check if XSD uses `xs:sequence` (required for unbounded elements) vs `xs:all` (flexible ordering).
 
 ## Example: Adding a New Element
 
@@ -330,3 +513,23 @@ When tests run correctly:
 - Test Class: `src/test/java/org/wildfly/extension/{subsystem}/{Subsystem}SubsystemTestCase.java`
 - Test Framework: `org.jboss.as.subsystem.test.AbstractSubsystemSchemaTest`
 - Stability Levels: `org.jboss.as.version.Stability` enum
+
+## Version History
+
+### 2026-09-11 - WFCORE-7193 Lessons Integration
+
+Updated based on lessons learned from WFCORE-7193 (brute-force-protection implementation):
+
+**Major Additions:**
+- **Section 2 (Test File Naming)**: Added comprehensive test file lifecycle management, legacy- prefix convention, CURRENT map relationship, and schema promotion process
+- **Section 1b (Expression Coverage for OBJECT Attributes)**: New section on embedded expression testing pattern for OBJECT attributes
+- **Section 1c (Coverage Across Component Types)**: New section on ensuring complete coverage when attributes apply to multiple component types
+- **Section 2 (Element Ordering)**: Expanded with xs:sequence vs xs:all constraints, ATTRIBUTES array ordering, and marshaller behavior
+- **Review Checklist**: Updated with new requirements for test file naming, OBJECT attributes, component type coverage, and XSD constraints
+- **Common Pitfalls**: Added 4 new pitfalls (#11-14) covering historical schema naming, component type coverage, OBJECT attribute expression patterns, and xs:sequence violations
+
+**Key Patterns Documented:**
+- Elytron subsystem pattern for OBJECT attribute expression testing
+- Test file naming conventions based on schema CURRENT map status
+- Complete component type coverage checklist (parser-supported vs non-parser)
+- XSD sequence constraint impact on element ordering
