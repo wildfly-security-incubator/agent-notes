@@ -1,23 +1,114 @@
-# Management Model Version Bump Guide
+# WildFly Version Mapping and Management Model Guide
 
 ## Overview
 
-This guide serves two purposes:
+Use this guide to establish version relationships before changing management configuration or reviewing compatibility claims, and to perform subsystem model version bumps.
 
-1. **Implementation Guide**: Describes the process for bumping the management model version for WildFly subsystems
-2. **PR Review Checklist**: Ensures that PRs with management model changes have the correct version bump
+It covers:
+
+1. **Version Verification**: Distinguish product, Core, root management model, subsystem model and XML schema versions using sources from the exact release or commit.
+2. **Host Excludes**: Verify which target management version a release alias selects.
+3. **Subsystem Implementation and Review**: Determine whether a model version bump is needed, then update its registration, transformer chain and tests.
 
 A management model version bump is a distinct step that must be performed when the subsystem's management model changes, separate from schema changes or model content modifications.
 
-**Important**: This guide covers ONLY the version bump process. Schema changes and model attribute modifications are separate tasks that should be documented separately.
+Schema changes and model attribute implementation are covered by the [schema version guide](schema-version-bump-guide.md) and [feature implementation guide](feature-implementation-guide.md).
 
 **Living Document**: This guide should be kept up to date as we work on version bumps and review PRs. If you discover discrepancies, missing steps, or better practices, please update this document to reflect the current reality.
 
 **Note**: While this guide uses elytron-oidc-client as the primary example, the patterns apply to all WildFly subsystems. Different subsystems may use different version management patterns (see "Subsystem Version Patterns" below).
 
+## Version Relationships and Authoritative Sources
+
+**WildFly product releases, WildFly Core releases, root management models, subsystem models and XML schemas are separate version sequences. Never infer one from another, including by assuming a fixed numerical offset.**
+
+Use the following files at the exact target tag or commit. Paths are relative to the named GitHub repository; subsystem filenames vary, so the OIDC files are concrete examples.
+
+| Version or mapping | GitHub repository and file to query | What establishes the value |
+|--------------------|-------------------------------------|----------------------------|
+| WildFly product release and selected Core artifact | `wildfly/wildfly`: [`pom.xml`](https://github.com/wildfly/wildfly/blob/42.0.0.Final/pom.xml) | Product tag/project version and `version.org.wildfly.core`, following dependency management if the selection is indirect |
+| Root management model | `wildfly/wildfly-core`: [`version/src/main/java/org/jboss/as/version/Version.java`](https://github.com/wildfly/wildfly-core/blob/34.0.0.Final/version/src/main/java/org/jboss/as/version/Version.java) | `MANAGEMENT_MAJOR_VERSION`, `MANAGEMENT_MINOR_VERSION`, `MANAGEMENT_MICRO_VERSION` |
+| Current root model construction | `wildfly/wildfly-core`: [`controller/src/main/java/org/jboss/as/controller/ModelVersion.java`](https://github.com/wildfly/wildfly-core/blob/34.0.0.Final/controller/src/main/java/org/jboss/as/controller/ModelVersion.java) | `ModelVersion.CURRENT` is constructed from the management constants in `Version` |
+| Host-release alias and exclusion selection | `wildfly/wildfly-core`: [`host-controller/src/main/java/org/jboss/as/domain/controller/resources/HostExcludeResourceDefinition.java`](https://github.com/wildfly/wildfly-core/blob/35.0.0.Beta2/host-controller/src/main/java/org/jboss/as/domain/controller/resources/HostExcludeResourceDefinition.java) | `KnownRelease` maps the alias; `getVersionKey()` resolves it into the target management version |
+| Kernel version enum values | `wildfly/wildfly-core`: [`host-controller/src/main/java/org/jboss/as/domain/controller/transformers/KernelAPIVersion.java`](https://github.com/wildfly/wildfly-core/blob/35.0.0.Beta2/host-controller/src/main/java/org/jboss/as/domain/controller/transformers/KernelAPIVersion.java) | Constructor arguments define a `ModelVersion`; `VERSION_35_0(35, 0, 0)` means management model 35.0.0, not Core release 35 |
+| Subsystem management model | `wildfly/wildfly`: [`elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcClientSubsystemModel.java`](https://github.com/wildfly/wildfly/blob/42.0.0.Final/elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcClientSubsystemModel.java) and [`ElytronOidcExtension.java`](https://github.com/wildfly/wildfly/blob/42.0.0.Final/elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcExtension.java) in the same directory | Follow the model's `CURRENT` value through `registerSubsystem()`; for Core-owned subsystems, query their implementation in `wildfly/wildfly-core` |
+| XML schema version | `wildfly/wildfly`: [`elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcSubsystemSchema.java`](https://github.com/wildfly/wildfly/blob/42.0.0.Final/elytron-oidc-client/src/main/java/org/wildfly/extension/elytron/oidc/ElytronOidcSubsystemSchema.java) and parser/writer registration in `ElytronOidcExtension.java` | Schema namespaces and the schema selected for the relevant stability level; these are independent of subsystem model versions |
+
+The links above are pinned examples, not a table of current releases. For another release, change the tag in each repository independently. Subsystems delivered by external feature packs must be checked in the repository/tag providing that component.
+
+### Query Exact Tags with GitHub MCP
+
+Discover the available GitHub tools first. A file-content tool such as `get_file_contents` can retrieve historical source without a local checkout. For example:
+
+```json
+{
+  "owner": "wildfly",
+  "repo": "wildfly",
+  "path": "pom.xml",
+  "ref": "refs/tags/42.0.0.Final"
+}
+```
+
+Read the selected Core dependency, then query its own tag:
+
+```json
+{
+  "owner": "wildfly",
+  "repo": "wildfly-core",
+  "path": "version/src/main/java/org/jboss/as/version/Version.java",
+  "ref": "refs/tags/34.0.0.Final"
+}
+```
+
+Use the same operation for the other paths in the table. To compare releases, request the same file at each exact tag and compare the relevant symbols. To inspect a PR or development build, use its exact commit SHA; the GitHub file-content tool also accepts `sha` where available. Record the resolved commit and cite the tagged or commit-pinned source. A file retrieved from default `main` does not establish its contents in a historical release. A release name or release-note summary alone does not prove a management version.
+
+If GitHub MCP is unavailable or fails, use GitHub's tag selector or a direct `https://github.com/<owner>/<repo>/blob/<tag-or-sha>/<path>` link. When a local checkout already exists, `git show <tag-or-sha>:<path>` provides the same source check without switching branches. Follow applicable workspace and tool-access rules.
+
+### Use DeepWiki to Locate and Explain the Code
+
+Where DeepWiki is available, `read_wiki_structure` can locate relevant topics and `ask_wiki_question` can help trace the version relationships. A focused question can name both repositories and the target releases:
+
+```json
+{
+  "repoName": ["wildfly/wildfly", "wildfly/wildfly-core"],
+  "question": "Which files and symbols establish the Core dependency, root management version and host-release mapping for WildFly 42.0.0.Final? Identify the indexed revision and distinguish it from verified source at Core 34.0.0.Final."
+}
+```
+
+**Treat DeepWiki as a discovery and explanation aid. Verify release-specific values in the exact tagged files using GitHub MCP or direct source access.** The question tool has no tag/ref parameter; mentioning a tag in the question does not pin the indexed source to it. Check cited revisions rather than assuming that an indexed branch represents the requested release. If a file or tag is missing from the answer, retrieve it directly rather than filling the gap from version-number patterns.
+
+## Host-Exclude Verification Process
+
+A `host-exclude` resource describes extensions and configuration to exclude for target hosts. Its resource name is a label; the `host-release` alias or explicit management version determines the version key used for matching hosts. The release first introducing an extension is not itself the exclusion target: earlier hosts without the extension need it excluded.
+
+Before changing an alias or explicit selector:
+
+1. Identify the **target host's** exact WildFly release and its selected Core dependency from tagged source. Check build overrides or provisioned artifact versions if assessing a customized server.
+2. Read that target Core release's `Version.java` management constants and confirm the `ModelVersion.CURRENT` construction. Record all three components.
+3. Identify the **domain controller's** Core version that consumes the host-exclude configuration. In that revision, trace the proposed alias through `HostExcludeResourceDefinition.KnownRelease`, `KernelAPIVersion` and `getVersionKey()`. The target's Core tag and the consuming controller's Core tag can differ.
+4. Compare the resolved version key with the target's verified management version. Preserve the intended extension exclusions. Prefer a supported release alias when it selects the correct target; if it is absent or incorrect, establish that with source evidence before choosing an explicit selector.
+5. Record the product tag, target Core tag, management version, consuming controller revision and resolved alias value. Verify each side independently before declaring a mapping incorrect or disagreeing with a review comment. An alias definition plus a Core artifact number is not sufficient evidence.
+
+### Verified Example: WildFly 42
+
+| Check | Tagged source | Result |
+|-------|---------------|--------|
+| Target Core selection | [WildFly 42.0.0.Final POM](https://github.com/wildfly/wildfly/blob/42.0.0.Final/pom.xml) | Core **34.0.0.Final** |
+| Target root management version | [Core 34.0.0.Final Version.java](https://github.com/wildfly/wildfly-core/blob/34.0.0.Final/version/src/main/java/org/jboss/as/version/Version.java) | **35.0.0** |
+| Alias in a newer consuming controller | [Core 35.0.0.Beta2 HostExcludeResourceDefinition.java](https://github.com/wildfly/wildfly-core/blob/35.0.0.Beta2/host-controller/src/main/java/org/jboss/as/domain/controller/resources/HostExcludeResourceDefinition.java) | `WildFly42.0` maps to `KernelAPIVersion.VERSION_35_0` |
+| Meaning of the enum constant | [Core 35.0.0.Beta2 KernelAPIVersion.java](https://github.com/wildfly/wildfly-core/blob/35.0.0.Beta2/host-controller/src/main/java/org/jboss/as/domain/controller/transformers/KernelAPIVersion.java) | `VERSION_35_0(35, 0, 0)` resolves to management **35.0.0** |
+
+For this controller, the correct selector for WildFly 42 is:
+
+```xml
+<param name="host-release" value="WildFly42.0"/>
+```
+
+An explicit management version of **34.0.0** would target the wrong management model. The fact that the target uses a Core artifact numbered 34 does not change that conclusion. This example establishes these particular tagged values, not a rule that management versions always equal Core release numbers plus one.
+
 ## Purpose of Management Model Versioning
 
-The management model version tracks the evolution of the subsystem's management API. When the model version is bumped:
+The remaining implementation and review sections concern **subsystem** management model versions. A subsystem model version tracks that subsystem's management API independently of the root management model. When the subsystem model version is bumped:
 
 1. **Backward Compatibility**: Older WildFly versions can still communicate with newer versions through transformers
 2. **Version Tracking**: Each WildFly release can be associated with a specific model version
@@ -882,15 +973,20 @@ For a pure management model version bump:
 
 ---
 
-**Document Version**: 1.3
+**Document Version**: 1.4
 **Created**: 2026-05-27
-**Last Updated**: 2026-11-02
-**Target Issue**: WFLY-21934
+**Last Updated**: 2026-11-18
+**Tracking Issue**: [agent-notes #23](https://github.com/wildfly-security-incubator/agent-notes/issues/23)
 **Related Docs**:
-- `oidc-promotion-tracker.md` - Overall project tracker
-- `wfly-21934-model-schema-work.md` - Detailed work log (to be created)
+
+- [Schema version guide](schema-version-bump-guide.md)
+- [Feature implementation guide](feature-implementation-guide.md)
 
 ## Revision History
+
+### Version 1.4 (2026-11-18)
+
+Expanded the guide to cover release/Core/model/schema relationships, authoritative tagged source, GitHub MCP and DeepWiki lookup options, and host-exclude verification (#23). Existing subsystem version bump procedures remain in this guide.
 
 ### Version 1.3 (2026-11-02)
 Corrections found while preparing the WildFly 43 Elytron bumps (#21):

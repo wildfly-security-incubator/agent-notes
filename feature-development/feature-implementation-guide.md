@@ -4,16 +4,49 @@
 
 This guide covers the implementation of new features in WildFly subsystems, focusing on the Elytron subsystem patterns learned from WFCORE-7193 (brute force protection configuration).
 
-**Scope**: This guide covers feature implementation AFTER version bumps are complete. Version bumps are a prerequisite - see the version bump guides first.
+**Scope**: Verify distribution scope before changing packaging or working under `legacy/`. Subsystem feature implementation follows any required version bumps - see the version bump guides first.
 
 **Relationship to Other Guides**:
 - **Prerequisites**: Read `management-model-version-bump-guide.md` and `schema-version-bump-guide.md` first
 - **Testing**: See `subsystem-schema-test-requirements.md` for test requirements
-- **Workflow**: Version bumps → Feature implementation (this guide) → Testing
+- **Workflow**: Verify target distributions → Required version bumps → Feature implementation (this guide) → Testing
 
 **Important Distinction**:
 - **New features** (most common): Model attributes are the FIRST activation of the feature
 - **Replacing system properties** (special case): Feature already exists via system properties, model adds management API (WFCORE-7193 pattern)
+
+## Verify Target Distributions Before Changing Packaging
+
+**Any proposed edit under `legacy/` is a red flag: double-check that the work belongs there before changing it.** Apply this check to new features, bug fixes, dependency updates, removals and backports. A similarly named module beside an active module is not sufficient reason to edit both.
+
+The directory name alone does not establish support status. A module can remain in the repository for historical or compatibility purposes after its distribution stops receiving new features. Another target branch can still use that module for an actively supported distribution. Verify the scope independently on each branch before copying a change or removing an existing integration.
+
+### Establish the Target and Its Consumers
+
+Use source inspection first; a full build is not required just to establish which distribution is in scope.
+
+1. **Identify the target branch and supported distribution.** Establish the intended product/release, Jakarta EE version and whether the task is a new feature or maintenance of an existing supported configuration. Consult the task requirements and branch's current development/support guidance; a Maven profile's existence does not establish support policy.
+2. **Trace Maven profile activation and reactor modules.** Read the root `pom.xml`, relevant parent POMs and module POMs. Check activation properties, defaults and explicit command-line selections. Distinguish profiles enabled for the intended build from disabled, opt-in or historical profiles. A file's presence in the checkout, or even inclusion in a reactor, does not by itself justify adding a feature there.
+3. **Resolve the selected feature-pack and distribution coordinates.** Follow properties such as `legacy.jakarta.version`, `latest.jakarta.version`, `legacy.ee.feature.pack.artifactId` and `latest.ee.feature.pack.artifactId` where present. Follow their consumers to the actual groupId/artifactId/version, including dependency management or provisioning configuration. Do not select a module based only on a directory or property name.
+4. **Trace packaging resources to the active consumers.** Inspect the selected feature pack's `pom.xml` and `wildfly-feature-pack-build.xml`: resource-copy/unpack executions, extension and package lists, schema packaging, dependencies and license inputs. Follow shared resource directories to every relevant consumer. For example, `ee-feature-pack/galleon-shared-legacy/` can supply resources to an active feature pack even when the separate distribution under `legacy/ee-feature-pack/` is inactive. Treat this as a reason to trace consumers, not as a permanent support-status mapping.
+5. **Check what the tests provision.** Follow `testsuite/pom.xml`, the affected test module and their active profiles to the selected feature-pack coordinates and Jakarta EE variant. Tests against a different variant do not verify packaging for the intended distribution. When assembly evidence is needed, inspect the output from the matching build/profile; stale output or a successful build of a different distribution is not proof.
+6. **Record why each affected distribution needs the change.** Keep a short rationale in the work notes or PR description identifying the branch, supported EE version, selected profile/coordinates and relevant consumers. If available evidence does not establish that a `legacy/` edit belongs in scope, leave it unapplied and ask the user or maintainer to clarify the target. Do not assume that adding or deleting the integration is the safer choice.
+
+### Apply the Change to the Verified Scope
+
+- Add new integration only to the distributions intended to receive the feature. Do not mirror resource unpacking, dependencies, extension lists or license entries into inactive distributions for symmetry.
+- Preserve required integration where the target branch still actively uses the older distribution. An upstream cleanup of retired packaging is not automatically a valid backport to every branch.
+- For shared resources, account for their active consumers before changing or removing them. The word `legacy` in a shared directory's name is neither a reason to remove it nor evidence that it should gain a feature.
+- Match any packaging verification to the selected distribution and test profiles. Follow the workspace's build authorization requirements before running builds or tests.
+
+### Distribution Scope Review Checklist
+
+- [ ] Every proposed `legacy/` edit has an explicit reason tied to the target branch and supported task.
+- [ ] Supported Jakarta EE versions, profile activation and reactor membership have been checked independently.
+- [ ] Selected feature-pack coordinates and shared resource consumers have been traced.
+- [ ] Changes cover the intended dependencies, resources, extensions, schemas and licenses without adding integration to inactive distributions.
+- [ ] Test provisioning and any inspected build output correspond to the intended distribution.
+- [ ] Backport applicability has been checked on the target branch rather than inferred from matching paths.
 
 ## Prerequisites: Version Bumps Come First
 
@@ -684,6 +717,7 @@ PersistentResourceXMLDescription realmParser_19_0_community = decorateRealms(
 Use this checklist to ensure complete implementation:
 
 ### Design Phase
+- [ ] Target distributions and Jakarta EE variants verified; any `legacy/` edits justified using the [distribution scope procedure](#verify-target-distributions-before-changing-packaging)
 - [ ] Version bumps complete (model + schema for target stability)
 - [ ] OBJECT attribute vs child resource decision made
 - [ ] XML structure (attributes vs elements) decided
@@ -827,6 +861,7 @@ Use this checklist to ensure complete implementation:
 
 ## Revision History
 
+- **2026-11-18**: Added target distribution verification before packaging changes, explicit `legacy/` checks, shared resource tracing and branch-specific backport applicability (#25).
 - **2026-09-12**: Initial version (v1.0) based on WFCORE-7193 implementation patterns
   - Covers OBJECT attribute patterns, string handling, runtime integration
   - Emphasizes version bump coordination via Zulip

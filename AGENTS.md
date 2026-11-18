@@ -37,6 +37,7 @@ agent-notes/
 2. **Follow document structure** - All guides use consistent heading conventions (see INDEX.md)
 3. **Load only what you need** - Use INDEX.md to find relevant guides
 4. **Update as you work** - These are living documents
+5. **Double-check legacy edits** - Any work under `legacy/` is a red flag. Before changing it, verify that it belongs in the target branch's supported distribution and task. Follow [Verify Target Distributions Before Changing Packaging](feature-development/feature-implementation-guide.md#verify-target-distributions-before-changing-packaging); do not infer support or backport applicability from directory names alone.
 
 ## Document Conventions
 
@@ -50,5 +51,5 @@ See INDEX.md for complete details on navigation strategies and document structur
 
 ---
 
-**Last Updated**: 2026-08-21
-**Version**: 2.0
+**Last Updated**: 2026-11-18
+**Version**: 2.1
