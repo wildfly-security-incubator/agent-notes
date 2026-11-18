@@ -66,9 +66,9 @@ Located in `feature-development/`:
 
 #### Version Management
 - **[management-model-version-bump-guide.md](feature-development/management-model-version-bump-guide.md)**
-  - **Purpose**: Guide for bumping WildFly subsystem management model versions
-  - **Use When**: Making changes to subsystem management API (attributes, operations, capabilities)
-  - **Key Topics**: Version bump process, transformer chains, PR review guidelines, stability levels
+  - **Purpose**: WildFly version mapping and management model guide, including subsystem version bumps
+  - **Use When**: Checking release/Core/model/schema relationships or host-exclude mappings, querying historical versions, or changing subsystem management APIs
+  - **Key Topics**: Authoritative GitHub source files, exact-tag GitHub MCP queries, DeepWiki discovery limits, host-exclude verification, subsystem version bumps, transformer chains, stability levels
   - **Related To**: Schema version bumps (often done together); prerequisite for feature implementation
 
 - **[schema-version-bump-guide.md](feature-development/schema-version-bump-guide.md)**
@@ -126,6 +126,9 @@ Located in `lessons-learnt/`:
 | Join the Elytron lock from an external extension | elytron-doohickey-guide.md | - |
 | Add management attribute | feature-implementation-guide.md | management-model-version-bump-guide.md |
 | Add XML configuration option | feature-implementation-guide.md | schema-version-bump-guide.md |
+| Map WildFly/Core releases to management versions | management-model-version-bump-guide.md — Version Relationships and Authoritative Sources | - |
+| Verify host-exclude release aliases | management-model-version-bump-guide.md — Host-Exclude Verification Process | - |
+| Query version definitions in historical tags | management-model-version-bump-guide.md — Query Exact Tags with GitHub MCP; Use DeepWiki to Locate and Explain the Code | - |
 | Bump management model version | management-model-version-bump-guide.md | schema-version-bump-guide.md |
 | Bump schema version | schema-version-bump-guide.md | management-model-version-bump-guide.md |
 | Generate TLS test certificates and stores | tls-test-certificate-generation-guide.md | - |
@@ -156,6 +159,9 @@ Located in `lessons-learnt/`:
 - **Manifest**: wildfly-development-workflow.md
 - **Component override**: wildfly-development-workflow.md
 - **Version bump**: management-model-version-bump-guide.md, schema-version-bump-guide.md
+- **Core release / root management model / version mapping**: management-model-version-bump-guide.md
+- **Host excludes / host-release / KnownRelease / KernelAPIVersion**: management-model-version-bump-guide.md
+- **Historical tags / GitHub MCP / DeepWiki**: management-model-version-bump-guide.md
 - **Feature implementation**: feature-implementation-guide.md
 - **Logging / log levels / DEBUG / TRACE / per-request messages**: logging-and-message-guide.md
 - **Message IDs / ELY_Messages.txt / ID range reservations**: logging-and-message-guide.md
@@ -183,7 +189,7 @@ Located in `lessons-learnt/`:
 - **Test coverage**: subsystem-schema-test-requirements.md
 - **Stability levels**: All guides (PREVIEW, COMMUNITY, DEFAULT, EXPERIMENTAL)
 - **PR review**: management-model-version-bump-guide.md, schema-version-bump-guide.md
-- **WildFly release**: All guides (version targeting)
+- **WildFly release**: management-model-version-bump-guide.md (release/Core/model relationships); other guides for feature targeting
 - **Zulip coordination**: feature-implementation-guide.md
 
 ## Document Structure Conventions
@@ -232,5 +238,5 @@ This index should be updated when:
 
 ---
 
-**Last Updated**: 2026-10-28
-**Index Version**: 1.6
+**Last Updated**: 2026-11-18
+**Index Version**: 1.7
