@@ -20,14 +20,14 @@ Located in `reproducer-development/`:
 - **[wildfly-deployment-reproducer-guide.md](reproducer-development/wildfly-deployment-reproducer-guide.md)**
   - **Purpose**: How to create a deployment-based reproducer project for diagnosing WildFly issues
   - **Use When**: Building a minimal project to reproduce a bug or verify behaviour in WildFly
-  - **Key Topics**: Archetype bootstrapping, multi-module structure, Galleon layers, CLI scripts, server lifecycle, verification with curl
+  - **Key Topics**: Scope and user/agent ownership, manual exploration, latest LTS JDK, shell/JBang helpers, visible working directories, staged setup, per-container documentation, archetype bootstrapping, Galleon layers, CLI and lifecycle operations
   - **Related To**: WildFly Galleon Guide (https://docs.wildfly.org/41/Galleon_Guide.html)
 
 #### Development Workflows
 - **[wildfly-development-workflow.md](reproducer-development/wildfly-development-workflow.md)**
   - **Purpose**: Development workflows for working with WildFly and its components in a reproducer
   - **Use When**: Debugging WildFly boot process, testing SNAPSHOT builds, overriding component versions
-  - **Key Topics**: Remote debugging (JDWP, suspend=y), WildFly SNAPSHOT builds, Galleon channels/manifests for version overrides
+  - **Key Topics**: Foreground remote debugging, simple release/SNAPSHOT selection, user-owned WildFly source builds, normal Maven repositories, optional component channels/manifests
   - **Related To**: wildfly-deployment-reproducer-guide.md (complementary workflow guide)
 
 #### Jakarta EE Security
@@ -111,10 +111,11 @@ Located in `lessons-learnt/`:
 | Task | Primary Guide | Supporting Guides |
 |------|--------------|-------------------|
 | Create a deployment reproducer | wildfly-deployment-reproducer-guide.md | wildfly-development-workflow.md |
+| Define reproducer scope, manual steps and agent execution boundaries | [wildfly-deployment-reproducer-guide.md — Scope and Ownership](reproducer-development/wildfly-deployment-reproducer-guide.md#scope-and-ownership) | wildfly-development-workflow.md |
 | Create Jakarta EE Security reproducer | jakarta-ee-security-patterns.md | wildfly-deployment-reproducer-guide.md |
 | Debug WildFly boot process | wildfly-development-workflow.md | wildfly-deployment-reproducer-guide.md |
 | Debug Jakarta EE Security | jakarta-ee-security-patterns.md | wildfly-development-workflow.md |
-| Test WildFly SNAPSHOT builds | wildfly-development-workflow.md | wildfly-deployment-reproducer-guide.md |
+| Use user-built WildFly SNAPSHOT artifacts | wildfly-development-workflow.md | wildfly-deployment-reproducer-guide.md |
 | Override component versions | wildfly-development-workflow.md | wildfly-deployment-reproducer-guide.md |
 | Override Soteria version | jakarta-ee-security-patterns.md | wildfly-development-workflow.md |
 | Implement new subsystem feature | feature-implementation-guide.md | Both version bump guides + test requirements |
@@ -143,6 +144,8 @@ Located in `lessons-learnt/`:
 ### By Keyword
 
 - **Reproducer**: wildfly-deployment-reproducer-guide.md
+- **Reproducer scope / user-owned execution / manual exploration / staged setup / per-container documentation / visible directories / JBang**: wildfly-deployment-reproducer-guide.md — Scope and Ownership
+- **Building WildFly from source / user activity**: wildfly-development-workflow.md — Building WildFly from Source: User Activity
 - **Galleon layers**: wildfly-deployment-reproducer-guide.md
 - **Galleon channels**: wildfly-development-workflow.md
 - **Archetype**: wildfly-deployment-reproducer-guide.md
@@ -246,5 +249,5 @@ This index should be updated when:
 
 ---
 
-**Last Updated**: 2026-11-23
-**Index Version**: 1.9
+**Last Updated**: 2026-11-25
+**Index Version**: 1.10

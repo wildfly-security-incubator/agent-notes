@@ -4,35 +4,37 @@
 
 This guide describes development workflows for working with WildFly and its components (e.g. Soteria, Elytron) in a reproducer project. It covers remote debugging, SNAPSHOT builds, and version overrides via channels/manifests.
 
+Follow [Scope and Ownership](wildfly-deployment-reproducer-guide.md#scope-and-ownership) first. These are user-invoked workflows, not an instruction for an agent to run every procedure or add every feature to a reproducer. Start with a released server and a simple version override. Configure debugging or advanced component channels only when the task needs them. Use the latest LTS JDK locally unless a documented issue or compatibility requirement calls for an older one.
+
 **Living Document**: Update this guide as new patterns emerge from WildFly development work.
 
 ## Remote Debugging
 
 ### Starting WildFly with Remote Debugging
 
-To debug WildFly, you need to start the server with JDWP (Java Debug Wire Protocol) enabled.
+To debug WildFly, start the server with JDWP (Java Debug Wire Protocol) enabled. The following startup examples assume a provisioned `runtime/server/` at the project root; adapt the path to the project layout.
 
 #### Debug Normally Running Server
 
 Add the debug arguments to `standalone.sh` via `JAVA_OPTS`:
 
 ```bash
-export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
-./ear/target/server/bin/standalone.sh
+export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:5005"
+./runtime/server/bin/standalone.sh
 ```
 
 - `transport=dt_socket` — Use socket transport for the debugger connection
 - `server=y` — WildFly listens for debugger connections (doesn't initiate)
 - `suspend=n` — Server starts immediately (doesn't wait for debugger)
-- `address=*:5005` — Listen on all interfaces, port 5005
+- `address=127.0.0.1:5005` — Listen on loopback, port 5005
 
 #### Debug Boot Process (Suspend Until Debugger Attaches)
 
 When debugging security initialization or other boot-time behaviour, use `suspend=y`:
 
 ```bash
-export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
-./ear/target/server/bin/standalone.sh
+export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005"
+./runtime/server/bin/standalone.sh
 ```
 
 The server will **pause immediately** and wait for a debugger to attach before continuing the boot process.
@@ -53,87 +55,33 @@ The server will resume (if `suspend=y` was used) once the debugger connects.
 
 #### Scripting Remote Debug Startup
 
-Update `start-server.sh` to support an optional `--debug` flag:
+A small foreground launcher can expose optional debugger flags without starting other components. This example assumes provisioning creates `runtime/server/` at the project root; keep the path consistent with the project's provisioning configuration.
 
 ```bash
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVER_HOME="$SCRIPT_DIR/ear/target/server"
-LOG_FILE="$SERVER_HOME/standalone/log/server.log"
-
-DEBUG_MODE="no"
-SUSPEND_MODE="n"
-
-# Parse command line arguments
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+SERVER_HOME="$SCRIPT_DIR/runtime/server"
+DEBUG_MODE=no
+SUSPEND_MODE=n
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --debug)
-            DEBUG_MODE="yes"
-            shift
-            ;;
-        --suspend)
-            SUSPEND_MODE="y"
-            shift
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Usage: $0 [--debug] [--suspend]"
-            echo ""
-            echo "Options:"
-            echo "  --debug     Enable remote debugging on port 5005"
-            echo "  --suspend   Pause server at boot until debugger attaches (requires --debug)"
-            exit 1
-            ;;
+        --debug) DEBUG_MODE=yes ;;
+        --suspend) SUSPEND_MODE=y ;;
+        *) echo "Usage: $0 [--debug] [--suspend]" >&2; exit 2 ;;
     esac
+    shift
 done
-
-if [ ! -d "$SERVER_HOME" ]; then
-    echo "Server not provisioned. Run 'mvn clean package -DskipTests' first."
-    exit 1
+[[ -x $SERVER_HOME/bin/standalone.sh ]] || { echo 'Provision the server first' >&2; exit 1; }
+[[ $SUSPEND_MODE == n || $DEBUG_MODE == yes ]] || { echo '--suspend requires --debug' >&2; exit 2; }
+if [[ $DEBUG_MODE == yes ]]; then
+    export JAVA_OPTS="${JAVA_OPTS:-} -agentlib:jdwp=transport=dt_socket,server=y,suspend=$SUSPEND_MODE,address=127.0.0.1:5005"
 fi
-
-if ss -tlnp 2>/dev/null | grep -q ":8080 "; then
-    echo "Port 8080 already in use — is the server already running?"
-    exit 1
-fi
-
-rm -f "$LOG_FILE"
-
-# Configure debug mode
-if [ "$DEBUG_MODE" = "yes" ]; then
-    export JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=$SUSPEND_MODE,address=*:5005"
-    echo "Starting server in debug mode (suspend=$SUSPEND_MODE, port=5005)..."
-    if [ "$SUSPEND_MODE" = "y" ]; then
-        echo "Server will pause at boot — attach debugger to continue."
-    fi
-fi
-
-"$SERVER_HOME/bin/standalone.sh" > /dev/null 2>&1 &
-SERVER_PID=$!
-echo "Starting server (PID: $SERVER_PID)..."
-
-# Wait for startup marker (skip if suspend=y, as server won't start until debugger attaches)
-if [ "$SUSPEND_MODE" = "n" ]; then
-    for i in $(seq 1 60); do
-        if grep -q "WFLYSRV0025" "$LOG_FILE" 2>/dev/null; then
-            echo "Server started."
-            if [ "$DEBUG_MODE" = "yes" ]; then
-                echo "Debugger can attach on localhost:5005"
-            fi
-            exit 0
-        fi
-        if ! kill -0 $SERVER_PID 2>/dev/null; then
-            echo "Server process died. Check $LOG_FILE"
-            exit 1
-        fi
-        sleep 1
-    done
-    echo "Timed out after 60s. Check $LOG_FILE"
-    exit 1
-else
-    echo "Server paused. Attach debugger on localhost:5005 to continue boot."
-fi
+export JBOSS_HOME="$SERVER_HOME"
+exec "$SERVER_HOME/bin/standalone.sh" -b=127.0.0.1 -bmanagement=127.0.0.1
 ```
+
+The user follows the console and attaches the debugger when ready. Keep live logs and the server process available for exploration; do not delete logs, launch requests, collect a report or tear down the session from this launcher.
 
 **Usage**:
 
@@ -153,44 +101,44 @@ When testing fixes or features that have been merged to WildFly main but not yet
 
 ### Switching to a SNAPSHOT Build
 
-#### Option 1: Local Maven Repository
-
-If you have built WildFly locally from source:
+Define one server-version property with a released default, and reference it from provisioning:
 
 ```xml
 <feature-packs>
     <feature-pack>
-        <location>org.wildfly:wildfly-galleon-pack:${version.wildfly.snapshot}</location>
+        <location>org.wildfly:wildfly-galleon-pack:${wildfly.version}</location>
     </feature-pack>
 </feature-packs>
 ```
 
-Where `version.wildfly.snapshot` is a property defined in your pom:
-
-```xml
-<properties>
-    <version.wildfly.snapshot>42.0.0.Beta1-SNAPSHOT</version.wildfly.snapshot>
-</properties>
-```
-
-Your local `~/.m2/repository` must contain the SNAPSHOT artifacts for this to work.
-
-**Always use `mvn clean package` after changing the WildFly version** — the wildfly-maven-plugin caches the provisioned server.
-
-### Building WildFly from Source (if needed)
-
-If the SNAPSHOT you need is not published:
+The user can select a different version without editing the POM:
 
 ```bash
-git clone https://github.com/wildfly/wildfly.git
-cd wildfly
-git checkout main  # or a specific branch/tag
+mvn -pl server wildfly:provision -Dwildfly.version=VERSION
+```
+
+Here `server` is an example provisioning module and `VERSION` must be replaced with the desired release or SNAPSHOT coordinate. Reuse an existing suitable property name when the project already has one. Keep application API and plugin versions independent of the chosen server version.
+
+Use the normal Maven settings and local repository containing the user's installed artifacts. SNAPSHOT availability depends on the selected version and configured repositories; do not assume all snapshots are published or that none are. Configure additional repositories only when they are actually required.
+
+Explain how to stop and reprovision a server or select another visible home when changing versions. `mvn clean` only removes paths managed by that lifecycle; an independently provisioned `runtime/` home survives it. Do not silently patch a running server, switch its version, create a source-SHA matrix or copy whole Maven repositories as part of a simple version override.
+
+### Building WildFly from Source: User Activity
+
+**This is a user activity in a separate WildFly checkout, not an automated reproducer step.** Keep these instructions available when the user needs an unpublished fix, but do not have an agent, provisioning script, Maven execution or test harness clone and build WildFly as part of creating or checking the reproducer. Any separately requested build automation is a different task with explicit authorization.
+
+The user selects the branch or revision in their own checkout, then performs the build there. For example, these are commands for the user to adapt and run:
+
+```bash
+cd /absolute/path/to/your/wildfly-checkout
 mvn clean install -DskipTests -Dquickly
 ```
 
-The `-Dquickly` profile skips tests and documentation builds. This installs the SNAPSHOT artifacts to your local `~/.m2/repository`.
+Follow that checkout's build requirements. This preparation installs artifacts into the user's Maven repository; the reproducer subsequently consumes the selected feature-pack coordinates. The reproducer should not own the source tree, orchestrate the reactor or copy its repository into the reproducer directory.
 
 ## Overriding Component Versions with Channels
+
+This is an advanced, opt-in workflow for a component-only experiment. A whole-server release/SNAPSHOT version switch does not by itself require channel profiles or custom manifests. Read this section when the task actually needs component replacement; do not add its example files or modes to every reproducer.
 
 ### Why Use Channels
 
@@ -472,7 +420,7 @@ This pattern is documented in the [WildFly Maven Plugin channel examples](https:
 
 ## Generic Component Override Pattern (Three-Tier Usage)
 
-For reproducers, support three distinct build modes: default (release versions), simple override (standard SNAPSHOT), and advanced override (custom manifest) — without requiring pom.xml edits for common cases.
+When a component-override workflow has been requested, the following pattern can offer three usage modes without POM edits. Add only the modes and manifest files the user needs; this is not a baseline requirement for reproducers or for a whole-server version override.
 
 ### Recommended Pattern: Property-Activated Profile with Default Manifest
 
@@ -717,16 +665,11 @@ Using an unsupported schema version causes:
 
 Always use `schemaVersion: "1.1.0"` for compatibility with current WildFly Maven Plugin versions. Check the [WildFly Channel specification](https://github.com/wildfly/wildfly-channel/blob/main/doc/spec.adoc) for schema version details.
 
-### ❌ Forgetting `mvn clean` After Changing Channels
+### ❌ Reusing a Server After Changing Channels
 
-The wildfly-maven-plugin caches the provisioned server in `target/server`. If you:
-- Change the manifest file
-- Add/remove channel entries
-- Update stream versions
+Changing manifests, channel entries or stream versions does not update an already provisioned server. Document a separate stop and reprovision step for the project's configured home. If that home lives under `target/`, Maven clean can remove it; a visible `runtime/` home needs deliberate replacement. Do not automatically erase a running or user-modified server.
 
-**Always use `mvn clean package`** to force reprovisioning. Otherwise, the old provisioned artifacts remain.
-
-**Verification after build**:
+**User inspection after explicit reprovisioning** (paths below assume the advanced example's `target/server` layout):
 ```bash
 # Check the actual provisioned artifact version
 find target/server/modules -name "*elytron-http-oidc*.jar"
@@ -763,22 +706,19 @@ Or use an absolute path:
 
 ## Summary: Development Workflow Checklist
 
-- [ ] Remote debugging documented in reproducer README (including `suspend=y` for boot debugging)
-- [ ] `start-server.sh` supports `--debug` and `--suspend` flags (optional enhancement)
-- [ ] WildFly SNAPSHOT switching documented (local Maven repo only — snapshots are not published)
-- [ ] Generic component override pattern configured:
-  - [ ] `<override.manifest>component-override.yaml</override.manifest>` property added
-  - [ ] `component-override` profile activated by `-Dcomponent.override`
-  - [ ] Profile uses `${override.manifest}` for the filename
-- [ ] Component override manifests created:
-  - [ ] `component-override.yaml` (default SNAPSHOT override)
-  - [ ] Additional manifests as examples (e.g., `soteria-snapshot.yaml`, `elytron-snapshot.yaml`)
-- [ ] Analyzed component artifact groups to determine the correct set of streams to override
-- [ ] Snapshots repository configured in parent pom if needed (e.g., JBoss snapshots for Soteria, local `~/.m2` otherwise)
-- [ ] Verified all three build modes (default, simple override, advanced override) by checking provisioned JAR versions in `target/server/modules`
-- [ ] README documents all three usage modes with examples
+- [ ] Selected workflows match the user's requested scope; user instructions to run them are separate from documentation examples
+- [ ] Latest LTS local JDK selected, or the concrete need for an older JDK explained
+- [ ] Released server default and a single property override support normal release/SNAPSHOT selection
+- [ ] User-owned WildFly source builds are documented as external manual preparation, never an implicit reproducer build or verification action
+- [ ] Normal Maven repository/settings are used; special repositories are configured only when required
+- [ ] Version switching, visible server homes and clean/reprovision behaviour are explained
+- [ ] Remote debugging is documented when relevant, including a foreground launcher and optional suspend-at-boot behaviour
+- [ ] If component overrides were requested, the needed artifact streams were identified and only the relevant profiles/manifests were added
+- [ ] README separates the manual operations and explains their effects, progress views and state lifetime
+- [ ] Agent checks stayed within authorized syntax/compilation scope; runtime or multi-mode checks were performed only when explicitly requested
+
 
 ---
 
-**Last Updated**: 2026-09-25  
-**Version**: 1.3
+**Last Updated**: 2026-11-25
+**Version**: 1.4
